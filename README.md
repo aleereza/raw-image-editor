@@ -6,7 +6,7 @@ The machine does the technical edits: white balance, exposure and tone, color, s
 
 **Status:** planning. Nothing is implemented yet.
 
-- [Implementation plan (draft v0.1)](IMPLEMENTATION_PLAN.md): architecture, agents, UI, evaluation, roadmap and open questions.
+- [Implementation plan (draft v0.2)](IMPLEMENTATION_PLAN.md): architecture, agents, UI, evaluation, roadmap, review decisions and open questions.
 
 ## The idea in one line
 
@@ -14,4 +14,4 @@ card → import → AI pre-cull → **you pick** → agents edit → **you skim 
 
 ## Planned stack
 
-Python (uv) · rawpy/LibRaw · RawTherapee 5.13 CLI as the render engine · OpenCV / ONNX Runtime · Claude API (opt-in) + MCP server · FastAPI · SQLite · Svelte
+Python (uv) · rawpy/LibRaw · RawTherapee 5.13 CLI as the render engine · OpenCV / ONNX Runtime · Claude API + MCP server · FastAPI · SQLite · Svelte
