@@ -719,6 +719,8 @@ Still to do: the golden set and the calibration-kit shots, which need you. The o
 - **Exit:** `rie render IMG.NEF --recipe r.json` produces a correct JPEG, and D1–D7 are confirmed or changed.
 
 ### Phase 1 — Fast, partly automatic culling · MVP 1 "cull in a fraction of the time" (~3 weeks)
+Built on branch `claude/phase-1-culling` and waiting for your review and a first real shoot. ADRs 0007–0009 record what changed: the trash is implemented without send2trash, every threshold is provisional until the golden set exists, scenes use a colour layout instead of embeddings for now, and the pairwise burst ranker is not built yet. [PROJECT_STATUS.md](PROJECT_STATUS.md) lists what was measured against the targets.
+
 - Catalog and migrations; `rie open <folder>` (scan, RAW+JPEG pairing, re-linking by content hash); external-drive detection; exiftool batch.
 - Geeqie-fast viewing: embedded JPEGs extracted and screen-size copies cached when a folder opens; the browser prefetches neighbors.
 - Grouping; focus inspector v1; faces, eyes and smiles; burst ranking v1.
