@@ -44,10 +44,15 @@ def migrations() -> list[tuple[int, str, str]]:
     return found
 
 
-def connect(path: Path, *, migrate: bool = True) -> sqlite3.Connection:
-    """Open the catalog, creating and migrating it as needed. Each thread needs its own connection."""
+def connect(path: Path, *, migrate: bool = True, any_thread: bool = False) -> sqlite3.Connection:
+    """Open the catalog, creating and migrating it as needed.
+
+    A connection is used by one thread at a time; `any_thread` lets it move between threads, as the web server's
+    per-request connections do (FastAPI runs a request's dependency and handler in different worker threads).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=30.0, isolation_level=None)  # autocommit; transactions are explicit
+    # autocommit; transactions are explicit
+    conn = sqlite3.connect(path, timeout=30.0, isolation_level=None, check_same_thread=not any_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")

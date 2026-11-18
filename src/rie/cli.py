@@ -45,6 +45,11 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--no-analysis", action="store_true", help="only scan and make previews")
     o.add_argument("--workers", type=int, help="analysis processes (default: analysis.workers)")
 
+    sv = commands.add_parser("serve", help="start the culling UI (http://localhost:7317 by default)")
+    sv.add_argument("--host", help="address to listen on (default: server.host)")
+    sv.add_argument("--port", type=int, help="port (default: server.port)")
+    sv.add_argument("--open", action="store_true", help="open the UI in the default browser")
+
     rs = commands.add_parser("restore", help="move a folder's trashed rejects (or one photo) back from the trash")
     rs.add_argument("folder", type=Path, help="the shoot folder")
     rs.add_argument("--photo", help="only this photo, by file name")
@@ -178,6 +183,22 @@ def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace, cfg: config.Config) -> int:
+    import uvicorn
+
+    from .api.app import WEB_DIST, create_app
+
+    host, port = args.host or cfg.server.host, args.port or cfg.server.port
+    if not (WEB_DIST / "index.html").is_file():
+        print("note: the web UI is not built; run `npm install` and `npm run build` in web/", file=sys.stderr)
+    url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}"
+    print(f"rie: serving {url}", flush=True)
+    if args.open and shutil.which("xdg-open"):
+        subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    uvicorn.run(create_app(cfg), host=host, port=port, log_level="warning")
+    return 0
+
+
 def cmd_restore(args: argparse.Namespace, cfg: config.Config) -> int:
     conn = catalog.connect(cfg.catalog_path)
     try:
@@ -214,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_open(args, cfg)
         if args.command == "restore":
             return cmd_restore(args, cfg)
+        if args.command == "serve":
+            return cmd_serve(args, cfg)
     except (
         config.ConfigError,
         RecipeError,

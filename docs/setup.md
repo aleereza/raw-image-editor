@@ -13,21 +13,32 @@ What the tool needs, how to install it, which models it uses, and where test sam
 | libvips | Thumbnails (Phase 1), through pyvips | 8.18 |
 | uv | Creates the Python 3.13 environment from `uv.lock` | 0.13.5 |
 | Claude Code | Culling and editing passes (Phase 3), signed in with `claude auth login` | 2.1.327 |
+| Node.js and npm | Building the web UI once (`web/`); not needed to run it | Node 26, npm 11 |
 | NVIDIA GPU and driver (optional) | ONNX Runtime and PyTorch models; everything also runs on the CPU | GTX 1650, 4 GB |
 
 `uv run rie check` reports each of these and the photo drive's state.
 
 ## Python environment
 
-`uv sync` creates `.venv` with Python 3.13 (ADR 0004) and the locked packages. Phase 0's code uses only the standard library. The dependency groups are:
+`uv sync` creates `.venv` with Python 3.13 (ADR 0004) and the locked packages: NumPy, pyvips, rawpy, OpenCV (headless), MediaPipe 0.10.35, scikit-learn, FastAPI and Uvicorn. The dependency groups are:
 
-- `dev`: pytest, ruff, pyright;
+- `dev`: pytest, ruff, pyright, Pillow and httpx for the tests;
 - `spikes` (`uv sync --group spikes`): rawpy 0.28, numpy, OpenCV 5.1 (headless), onnxruntime-gpu 1.32 with its CUDA 13 and cuDNN 9 wheels (about 3 GB), MediaPipe 0.10.35, pyvips 3.2, Pillow and the MCP SDK 2.3.
-
-Phase 1 moves the analysis packages into the main dependencies as it starts using them.
 
 - **MediaPipe** stays at 0.10.35: every 1.x release ran out of memory while creating the Face Landmarker (ADR 0003).
 - **libvips** warns that its OpenSlide module cannot load `libopenslide.so.1`. The warning is harmless; OpenSlide is only for microscopy slides.
+
+## The web UI
+
+The culling UI is a Svelte 5 app in `web/` (Vite, TypeScript). Build it once, and again after changes:
+
+```bash
+cd web
+npm install
+npm run build
+```
+
+`rie serve` then serves `web/dist/` together with the API on http://localhost:7317 (`[server]` in `config.toml` changes the address). For work on the UI, `npm run dev` serves it with hot reload on port 5173 and sends API calls to a running `rie serve`; `npm run check` type-checks it.
 
 ## Models
 

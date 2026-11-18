@@ -112,7 +112,7 @@ def _encode(image: pyvips.Image, quality: int) -> bytes:
     return image.jpegsave_buffer(Q=quality, keep=pyvips.enums.ForeignKeep.NONE, optimize_coding=True)
 
 
-def _write_cache(path: Path, data: bytes, cache: Path) -> None:
+def write_cached(path: Path, data: bytes, cache: Path) -> None:
     """Write a cached copy under a temporary name, then rename it; cache files belong to the app."""
     if Path(os.path.abspath(cache)) not in Path(os.path.abspath(path)).parents:
         raise PreviewError(f"refusing to write a preview outside the cache: {path}")
@@ -204,11 +204,11 @@ def make_previews(
             assert small_source is not None
             thumb = _upright(pyvips.Image.thumbnail_buffer(small_source, cfg.previews.thumb_size), rotate)
             thumb = thumb.copy_memory()
-            _write_cache(thumb_file, _encode(thumb, quality), cfg.paths.cache)
+            write_cached(thumb_file, _encode(thumb, quality), cfg.paths.cache)
         if not screen_file.exists():
             assert full is not None
             screen = _upright(pyvips.Image.thumbnail_buffer(full, cfg.previews.screen_size), rotate)
-            _write_cache(screen_file, _encode(screen, quality), cfg.paths.cache)
+            write_cached(screen_file, _encode(screen, quality), cfg.paths.cache)
         look = look_features(thumb)
     except (OSError, PreviewError, pyvips.Error) as exc:
         return PreviewResult(image_id, 0, 0, {}, time.perf_counter() - start, error=str(exc).splitlines()[0])
@@ -223,3 +223,28 @@ def full_size(path: Path, kind: str, ranges: dict[str, list[int]], orientation: 
     if data is None:
         raise PreviewError(f"{path.name} has no readable full-size embedded JPEG")
     return with_orientation(data, orientation)
+
+
+def _stored_box(box: list[float], orientation: int) -> list[float]:
+    """An upright, normalized box in the stored (sensor) frame of a JPEG with this orientation."""
+    x, y, w, h = box
+    if orientation in (3, 4):
+        return [1 - x - w, 1 - y - h, w, h]
+    if orientation in (5, 6):
+        return [y, 1 - x - w, h, w]
+    if orientation in (7, 8):
+        return [1 - y - h, x, h, w]
+    return [x, y, w, h]
+
+
+def face_crop(full: bytes, orientation: int, box: list[float], grow: float = 1.5, quality: int = 90) -> bytes:
+    """A 100% crop of the full-size JPEG around a face (an upright, normalized box), upright, as JPEG."""
+    image = pyvips.Image.new_from_buffer(full, "", access="sequential")
+    x, y, w, h = _stored_box(box, orientation)
+    cx, cy = (x + w / 2) * image.width, (y + h / 2) * image.height
+    side = max(w * image.width, h * image.height) * grow
+    left, top = max(int(cx - side / 2), 0), max(int(cy - side / 2), 0)
+    width = max(min(int(side), image.width - left), 1)
+    height = max(min(int(side), image.height - top), 1)
+    crop = image.crop(left, top, width, height).copy_memory()
+    return _encode(_upright(crop, orientation), quality)
