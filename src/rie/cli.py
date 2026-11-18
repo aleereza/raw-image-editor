@@ -13,9 +13,10 @@ from . import catalog, config, drive, locations, safety
 from .engine.rawtherapee import RenderError, RenderResult
 from .engine.recipe import RecipeError
 from .engine.recipe import load as load_recipe
+from .pipeline import open_folder
 from .render import RenderPlan, default_output, engine, render
 from .scan import exif
-from .scan.folder import ScanError, scan_folder
+from .scan.folder import ScanError
 
 DCP_DIRS = (Path("/usr/share/rawtherapee/dcpprofiles"), Path("/usr/local/share/rawtherapee/dcpprofiles"))
 
@@ -122,10 +123,11 @@ def _progress(step: str, done: int, total: int) -> None:
 def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     conn = catalog.connect(cfg.catalog_path)
     try:
-        summary = scan_folder(conn, cfg, args.folder, progress=_progress)
+        result = open_folder(conn, cfg, args.folder, progress=_progress)
         catalog.backup(conn, cfg.paths.data)
     finally:
         conn.close()
+    summary = result.scan
     moved = f", re-linked from {summary.moved_from}" if summary.moved_from else ""
     print(
         f"{summary.path}: {summary.shots} photos ({summary.new} new, {summary.changed} changed, "
@@ -134,6 +136,10 @@ def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     )
     for error in summary.errors[:10]:
         print(f"  metadata: {error}", file=sys.stderr)
+    pv = result.previews
+    print(f"previews: {pv.done} made, {pv.skipped} already cached, {pv.failed} failed; {pv.seconds:.1f} s")
+    for error in pv.errors[:10]:
+        print(f"  preview: {error}", file=sys.stderr)
     return 0
 
 

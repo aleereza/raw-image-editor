@@ -808,6 +808,10 @@ wheels = [
 name = "raw-image-editor"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "numpy" },
+    { name = "pyvips" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -829,6 +833,10 @@ spikes = [
 ]
 
 [package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=2.5,<3" },
+    { name = "pyvips", specifier = ">=3.2,<4" },
+]
 
 [package.metadata.requires-dev]
 dev = [
