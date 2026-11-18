@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "raw-image-editor"
+version = "0.1.0"
+description = "AI-assisted RAW workflow: keyboard culling, automated technical edits, RawTherapee as the render engine"
+readme = "README.md"
+# Phase 0 chose Python 3.13 by wheel availability: see docs/adr/0004-python-version.md.
+requires-python = ">=3.13,<3.14"
+# Phase 0 code needs only the standard library: rendering shells out to rawtherapee-cli.
+# The analysis stack joins these dependencies when Phase 1 starts using it.
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pytest>=9.2,<10",
+  "ruff>=0.17,<0.18",
+  "pyright>=1.1.414",
+]
+# Packages the Phase 0 spike scripts in scripts/spikes/ use: `uv sync --group spikes`.
+spikes = [
+  "rawpy>=0.28,<0.29",
+  "numpy>=2.5,<3",
+  "opencv-python-headless>=5.1,<6",
+  # PyPI's Linux wheel is built for CUDA 13 and cuDNN 9; the extras install those libraries as wheels.
+  "onnxruntime-gpu[cuda,cudnn]>=1.32,<1.33",
+  # Every 1.x release (1.0.1 to 1.2.3) ran out of memory creating the Face Landmarker here; see ADR 0003.
+  "mediapipe==0.10.35",
+  "pyvips>=3.2,<4",
+  "pillow>=12",
+  "mcp>=2.3,<3",
+]
+
+[project.scripts]
+rie = "rie.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rie"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+  "rawtherapee: needs rawtherapee-cli and a sample NEF (set RIE_SAMPLE_NEF or keep samples in ~/.cache/rie/samples)",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+# Markdown stays as written: the formatter would otherwise reformat code blocks in the plan and the docs.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"

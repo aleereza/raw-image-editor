@@ -1,0 +1,37 @@
+# Copy this file to config.toml and adjust it for this installation.
+# config.toml is ignored by Git, so real paths and local choices stay out of the repository.
+# Every key is optional. Commented keys show their defaults; the two set below are examples.
+
+[paths]
+# Folder that holds the shoot folders, on the photo drive. The app only reads there (see AGENTS.md).
+photos = "/path/to/Photos"
+# Previews, renders, analysis, and the settings folder the app gives RawTherapee; safe to delete.
+# cache = "~/.cache/rie"
+# The catalog (Phase 1).
+# data = "~/.local/share/rie"
+
+[drive]
+# Filesystem UUID of the photo drive, as listed in /dev/disk/by-uuid (for NTFS, 16 hex digits).
+# `rie check` says whether it is connected, deciding from the device and the mount table only.
+uuid = "0123456789ABCDEF"
+# Where the drive is expected; when unset, it is found in the mount table by its UUID.
+# mountpoint = "/path/to/drive"
+
+[rawtherapee]
+# cli = "rawtherapee-cli"
+# RT_SETTINGS for every render, so RawTherapee's own preferences never change the app's renders.
+# Default: <paths.cache>/rawtherapee.
+# settings_dir = "~/.cache/rie/rawtherapee"
+# Base profiles that recipes name, such as d7100-base@1; a relative path is relative to this file.
+# profiles_dir = "profiles/rawtherapee"
+# timeout = 300.0         # seconds per render
+
+[render]
+# preview_size = 2048     # long edge of `rie render --preview`, in pixels
+# jpeg_quality = 95
+# jpeg_subsampling = 3    # 1 = 4:2:0, 2 = 4:2:2, 3 = 4:4:4
+
+[claude]
+# Claude's culling and editing passes (Phase 3), through Claude Code on the signed-in account.
+# enabled = true
+# model = ""              # empty: whatever model Claude Code is set to

@@ -1,0 +1,16 @@
+{
+  "schema": "rie.recipe/1",
+  "engine": { "name": "rawtherapee", "version": "5.13", "base_profile": "d7100-base@1" },
+  "params": {
+    "geometry":      { "rotate_deg": -1.35, "crop": { "x": 112, "y": 80, "w": 5776, "h": 3851, "aspect": "3:2" } },
+    "white_balance": { "temperature_k": 5450, "tint": 1.03 },
+    "exposure":      { "ev": 0.45, "highlight_compression": 35, "shadows": 20 },
+    "color":         { "vibrance": 12, "saturation": 0 },
+    "detail":        { "nr_luma": 0, "nr_chroma": "auto", "capture_sharpening": true },
+    "lens":          { "profile": "lensfun-auto", "distortion": true, "vignetting": true, "ca": true }
+  },
+  "provenance": {
+    "white_balance.temperature_k": { "source": "agent:wb@0.3.0", "confidence": 0.82, "why": "gray-edge and skin prior agree; scene median applied" },
+    "geometry.rotate_deg":         { "source": "human", "locked": true }
+  }
+}
