@@ -93,7 +93,11 @@ class JobRunner:
                     job.step, job.done, job.total = step, done, total
                     self._touch()
 
-                result = open_folder(conn, self.cfg, Path(job.path), progress=progress)
+                def found(folder_id: int, job: Job = job) -> None:
+                    job.folder_id = folder_id
+                    self._touch()
+
+                result = open_folder(conn, self.cfg, Path(job.path), progress=progress, on_folder=found)
                 job.folder_id = result.scan.folder_id
                 paused = result.analysis is not None and result.analysis.paused
                 piles = result.sort.piles if result.sort else {}

@@ -143,16 +143,31 @@ def open_folder(
     progress: Progress = _nothing,
     analyze: bool = True,
     workers: int | None = None,
+    on_folder: Callable[[int], None] | None = None,
 ) -> OpenResult:
-    """Scan a folder, make its previews, analyse its photos and group them."""
+    """Scan a folder, make its previews, analyse its photos and group them.
+
+    The folder is grouped and sorted after each step: right after the scan, so the grid can be browsed within
+    seconds (thumbnails are made on demand meanwhile), after the previews (which add the look of each frame), and
+    once the analysis is done. `on_folder` hears the folder's id after the scan.
+    """
     summary = scan_folder(conn, cfg, folder, progress=progress)
-    result = OpenResult(
-        scan=summary, previews=run_previews(conn, cfg, summary.folder_id, progress=progress, path=summary.path)
-    )
+    if on_folder is not None:
+        on_folder(summary.folder_id)
     names = files.list_folder(summary.path).sidecars
-    result.sidecars = sidecars.import_sidecars(conn, summary.folder_id, summary.path, names)
-    result.sidecars.written = sidecars.flush_pending(conn, cfg, summary.folder_id)
+    sidecar_stats = sidecars.import_sidecars(conn, summary.folder_id, summary.path, names)
+    sidecar_stats.written = sidecars.flush_pending(conn, cfg, summary.folder_id)
+    run_grouping(conn, summary.folder_id)
+    sort_folder(conn, summary.folder_id)
+    progress("sorted", 0, 0)
+    result = OpenResult(
+        scan=summary,
+        previews=run_previews(conn, cfg, summary.folder_id, progress=progress, path=summary.path),
+        sidecars=sidecar_stats,
+    )
     if analyze:
+        run_grouping(conn, summary.folder_id)
+        sort_folder(conn, summary.folder_id)
         result.analysis = run_analysis(conn, cfg, summary.folder_id, progress=progress, workers=workers)
     result.groups = run_grouping(conn, summary.folder_id)
     result.sort = sort_folder(conn, summary.folder_id)

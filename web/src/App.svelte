@@ -221,7 +221,10 @@
       for (const job of ui.jobs) {
         if (job.state === "done" && !finished.has(job.id)) {
           finished.add(job.id);
-          if (job.folder_id !== null && job.folder_id === ui.folderId) refreshFolder();
+          if (job.folder_id !== null && job.folder_id === ui.folderId) {
+            refreshFolder();
+            say("analysis done: the piles are sorted with focus, faces and bursts");
+          }
         }
       }
     };

@@ -21,16 +21,24 @@
     try {
       const job = await api.open(path.trim());
       say(`opening ${job.path}`);
+      let shown = false;
       const timer = setInterval(async () => {
         const mine = ui.jobs.find((j) => j.id === job.id);
-        if (mine && (mine.state === "done" || mine.state === "failed")) {
+        if (!mine) return;
+        // The grid can be browsed as soon as the scan has given the folder a first sort; the rest goes on.
+        const browsable = ["sorted", "previews", "analysis"].includes(mine.step) || mine.state === "done";
+        if (!shown && browsable && mine.folder_id !== null) {
+          shown = true;
+          busy = false;
+          await loadFolder(mine.folder_id);
+        }
+        if (mine.state === "done" || mine.state === "failed") {
           clearInterval(timer);
           busy = false;
           await refresh();
-          if (mine.state === "done" && mine.folder_id !== null) await loadFolder(mine.folder_id);
-          else say(mine.message, 10000);
+          if (mine.state === "failed") say(mine.message, 10000);
         }
-      }, 500);
+      }, 300);
     } catch (error) {
       busy = false;
       say((error as Error).message, 8000);
