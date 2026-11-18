@@ -14,11 +14,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import catalog
+from . import catalog, sidecars
 from .analysis.folder import GroupStats, run_grouping
 from .analysis.run import AnalysisStats, run_analysis
 from .config import Config
-from .scan import previews
+from .scan import files, previews
 from .scan.folder import ScanSummary, folder_path, scan_folder
 
 type Progress = Callable[[str, int, int], None]
@@ -128,6 +128,7 @@ def _store_previews(
 class OpenResult:
     scan: ScanSummary
     previews: StepStats
+    sidecars: sidecars.ImportStats | None = None
     analysis: AnalysisStats | None = None
     groups: GroupStats | None = None
 
@@ -146,6 +147,9 @@ def open_folder(
     result = OpenResult(
         scan=summary, previews=run_previews(conn, cfg, summary.folder_id, progress=progress, path=summary.path)
     )
+    names = files.list_folder(summary.path).sidecars
+    result.sidecars = sidecars.import_sidecars(conn, summary.folder_id, summary.path, names)
+    result.sidecars.written = sidecars.flush_pending(conn, cfg, summary.folder_id)
     if analyze:
         result.analysis = run_analysis(conn, cfg, summary.folder_id, progress=progress, workers=workers)
     result.groups = run_grouping(conn, summary.folder_id)

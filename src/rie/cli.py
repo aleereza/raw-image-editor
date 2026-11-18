@@ -144,6 +144,14 @@ def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     print(f"previews: {pv.done} made, {pv.skipped} already cached, {pv.failed} failed; {pv.seconds:.1f} s")
     for error in pv.errors[:10]:
         print(f"  preview: {error}", file=sys.stderr)
+    sc = result.sidecars
+    if sc is not None and (sc.read or sc.written):
+        print(
+            f"RawTherapee sidecars: {sc.imported} imported ({sc.ratings} ratings, {sc.edits} with edits kept as "
+            f"locked), {sc.read - sc.imported} unchanged; {sc.written} waiting ratings written"
+        )
+        for error in sc.errors[:10]:
+            print(f"  sidecar: {error}", file=sys.stderr)
     an = result.analysis
     if an is not None:
         state = " (paused: the drive is not connected)" if an.paused else ""
