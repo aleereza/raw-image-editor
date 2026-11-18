@@ -40,6 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     o = commands.add_parser("open", help="scan a shoot folder into the catalog (reads the folder, never writes it)")
     o.add_argument("folder", type=Path, help="the shoot folder")
+    o.add_argument("--no-analysis", action="store_true", help="only scan and make previews")
+    o.add_argument("--workers", type=int, help="analysis processes (default: analysis.workers)")
     return parser
 
 
@@ -123,7 +125,9 @@ def _progress(step: str, done: int, total: int) -> None:
 def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     conn = catalog.connect(cfg.catalog_path)
     try:
-        result = open_folder(conn, cfg, args.folder, progress=_progress)
+        result = open_folder(
+            conn, cfg, args.folder, progress=_progress, analyze=not args.no_analysis, workers=args.workers
+        )
         catalog.backup(conn, cfg.paths.data)
     finally:
         conn.close()
@@ -140,6 +144,17 @@ def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     print(f"previews: {pv.done} made, {pv.skipped} already cached, {pv.failed} failed; {pv.seconds:.1f} s")
     for error in pv.errors[:10]:
         print(f"  preview: {error}", file=sys.stderr)
+    an = result.analysis
+    if an is not None:
+        state = " (paused: the drive is not connected)" if an.paused else ""
+        print(f"analysis: {an.done} analysed, {an.skipped} up to date, {an.failed} failed; {an.seconds:.1f} s{state}")
+        if an.note:
+            print(f"  {an.note}", file=sys.stderr)
+        for error in an.errors[:10]:
+            print(f"  analysis: {error}", file=sys.stderr)
+    if result.groups is not None:
+        g = result.groups
+        print(f"groups: {g.scenes} scenes, {g.bursts} bursts ({g.in_bursts} photos in bursts of two or more)")
     return 0
 
 

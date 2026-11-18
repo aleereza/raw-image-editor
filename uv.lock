@@ -809,8 +809,11 @@ name = "raw-image-editor"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "mediapipe" },
     { name = "numpy" },
+    { name = "opencv-python-headless" },
     { name = "pyvips" },
+    { name = "rawpy" },
 ]
 
 [package.dev-dependencies]
@@ -834,8 +837,11 @@ spikes = [
 
 [package.metadata]
 requires-dist = [
+    { name = "mediapipe", specifier = "==0.10.35" },
     { name = "numpy", specifier = ">=2.5,<3" },
+    { name = "opencv-python-headless", specifier = ">=5.1,<6" },
     { name = "pyvips", specifier = ">=3.2,<4" },
+    { name = "rawpy", specifier = ">=0.28,<0.29" },
 ]
 
 [package.metadata.requires-dev]

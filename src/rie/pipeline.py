@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import catalog
+from .analysis.folder import GroupStats, run_grouping
+from .analysis.run import AnalysisStats, run_analysis
 from .config import Config
 from .scan import previews
 from .scan.folder import ScanSummary, folder_path, scan_folder
@@ -126,10 +128,25 @@ def _store_previews(
 class OpenResult:
     scan: ScanSummary
     previews: StepStats
+    analysis: AnalysisStats | None = None
+    groups: GroupStats | None = None
 
 
-def open_folder(conn: sqlite3.Connection, cfg: Config, folder: Path, *, progress: Progress = _nothing) -> OpenResult:
-    """Scan a folder and make its previews; later steps add analysis, grouping and the sort."""
+def open_folder(
+    conn: sqlite3.Connection,
+    cfg: Config,
+    folder: Path,
+    *,
+    progress: Progress = _nothing,
+    analyze: bool = True,
+    workers: int | None = None,
+) -> OpenResult:
+    """Scan a folder, make its previews, analyse its photos and group them."""
     summary = scan_folder(conn, cfg, folder, progress=progress)
-    preview_stats = run_previews(conn, cfg, summary.folder_id, progress=progress, path=summary.path)
-    return OpenResult(scan=summary, previews=preview_stats)
+    result = OpenResult(
+        scan=summary, previews=run_previews(conn, cfg, summary.folder_id, progress=progress, path=summary.path)
+    )
+    if analyze:
+        result.analysis = run_analysis(conn, cfg, summary.folder_id, progress=progress, workers=workers)
+    result.groups = run_grouping(conn, summary.folder_id)
+    return result

@@ -11,3 +11,4 @@ One file per decision, numbered in order. Each says what was checked, what was f
 | [0005](0005-external-drive.md) | Photo drive detection | UUID link plus mount table, never touching the mount point. |
 | [0006](0006-claude-code-headless.md) | Claude Code headless and MCP | D6 confirmed. Two bursts in 19 s, about $0.05 per burst API-equivalent. |
 | [0007](0007-safe-file-operations.md) | Safe file operations | The freedesktop.org trash implemented in `rie.fileops` instead of send2trash, with an explicit same-device check, no-replace renames, and static and audit-hook tests that only this module changes photo folders. |
+| [0008](0008-analysis-v1.md) | Analysis v1 | Blur per tile from the raw green channel (fine against 2-pixel-blurred gradient energy), faces per ADR 0003, focus verdicts at the eyes or AF point, grouping by time, settings and a cheap colour layout, burst ranking with burst-relative blinks. All thresholds provisional until the golden set exists. |

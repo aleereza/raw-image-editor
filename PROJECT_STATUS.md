@@ -14,6 +14,13 @@ The state of the code. Notes about one installation, such as its photo drive and
   - Re-opening an unchanged folder reads no file.
   - It then caches upright copies of the camera's embedded JPEGs under `<cache>/previews/<hash>/`: a 512 px grid thumbnail from the 1620 x 1080 `OtherImage` and a 2048 px loupe copy from the 6000 x 4000 `JpgFromRaw`, both read with one sequential read per file and made six at a time with libvips (`[previews]` sets the sizes, quality and workers). It also measures each frame's look (an 8 x 8 CIELAB layout, a difference hash, mean luminance and clipping) for grouping. A photo whose copies exist is skipped. On the reference machine, 29 sample NEFs from the internal disk took 0.8 s to scan and 1.3 s for previews.
   - 100% zoom serves the `JpgFromRaw` bytes as they are, with an EXIF orientation tag inserted so the browser turns portrait shots upright without re-encoding.
+- **Analysis** (`rie.analysis`, ADR 0008), run by `rie open` after the previews, in `analysis.workers` processes (3 by default), each photo read once:
+  - a blur map from the raw green channel (32 × 32 tiles of the half-resolution green, fine gradient energy against the same after a 2-pixel blur, minus a noise floor measured in flat tiles, with clipped highlights left out), plus the direction of any directional blur;
+  - faces, eyes and smiles per ADR 0003: YuNet at 1600 px, a tiled pass for group shots kept only with landmark confirmation and containment suppression, a 640 px pass for close-ups, and the MediaPipe landmarker per face for blink, smile, head pose and iris positions;
+  - a focus verdict (sharp, soft, missed, motion, shake or unknown) at the eyes of the focused face, else the AF point the camera used (the 51-point layout is estimated), else the sharpest detail, with the background's sharpness, the shutter against the handheld limit, and per-face sharpness;
+  - the photo's SHA-256 content hash.
+  On the reference machine this takes 0.8–1.3 s per photo per process; with three processes the 29 samples took 16.8 s. The step checks the drive before each photo and pauses when it is gone.
+- **Grouping and burst ranking:** scenes and bursts from capture time, lens settings, light and the look descriptor; near-duplicates inside bursts; faces followed through each burst by position; every frame scored and ranked with a one-line reason ("#4 is better: 1 of 3 blinking, 62% as sharp as the sharpest frame"). The thresholds are provisional (ADR 0008).
 - **Safe file operations** (`rie.fileops`, ADR 0007): the only code that changes a photo folder. It moves a file to its volume's freedesktop.org trash (`.Trash-<uid>` at the drive's top) after checking the trash is on the same device, records where the file went, restores it without overwriting anything, creates new files and updates `.pp3` sidecars through temporary names (a sidecar the app did not create only after a backup), and never deletes anything except a restored file's `.trashinfo`. A static test fails on any delete, rename or write outside the module that is not a reviewed cache or data-folder write, and an audit-hook test checks real runs. `rie check` shows the drive's trash size and free space and looks for anything that empties the trash automatically. `rie render -o` refuses outputs inside the photos folder.
 - **Photo drive wired in** (`rie.locations`): a folder under the drive's mount point (or the photos folder) is stored as the drive's UUID plus a relative path. Before it is read, the drive's state is checked from the device and the mount table; an unplugged drive is reported without touching its mount point.
 
@@ -50,7 +57,6 @@ The state of the code. Notes about one installation, such as its photo drive and
 
 - The Phase 0 items that need the owner: the golden set (about 200 NEFs with labels) and the calibration-kit shots (gray card in daylight, shade, flash and home lighting).
 - The rest of Phase 1 (on this branch, in progress):
-  - previews and analysis;
   - grouping, the three piles, the culling UI and the trash at Done culling;
   - the edit agents, sidecars and export;
   - the real MCP server and the Claude runner;
@@ -68,13 +74,7 @@ The state of the code. Notes about one installation, such as its photo drive and
    - embedded previews read by byte range: `OtherImage` (1620 × 1080) for the grid, `JpgFromRaw` (6000 × 4000) for the loupe;
    - drive detection wired into the scan and the jobs;
    - the file-operations module of plan §3.5, before any code writes to the drive.
-3. Faces per ADR 0003:
-   - YuNet at 1600 px;
-   - tiling for group shots, kept only with landmark confirmation and containment suppression;
-   - a 640 px pass for close-ups;
-   - burst-relative blink and smile scores.
-4. Focus inspector v1, using `PrimaryAFPoint` and `AFPointsUsed`; the D7100 never fills `AFPointsInFocus`.
-5. Move rawpy, OpenCV, ONNX Runtime, MediaPipe and pyvips from the `spikes` group into the main dependencies as Phase 1 code uses them.
+3. The rest of Phase 1, on this branch.
 
 ## Known limits
 
