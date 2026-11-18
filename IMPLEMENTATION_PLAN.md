@@ -265,7 +265,7 @@ flowchart TD
 
 Your photos exist only on the Elements drive for now, so the app is built so that nothing it does can lose one.
 - **No hard deletes.** All file operations go through one small module, and the only removal it can do is moving a file to the drive's trash. A test fails the build if any other code deletes, overwrites or renames files in your folders.
-- **Originals are never opened for writing.** New files (sidecars, exports) are written under a temporary name and then renamed into place. A file the app didn't create is never overwritten.
+- **Originals are never opened for writing.** Sidecars and exports are written under a temporary name and then renamed into place. A file the app didn't create is never overwritten; the one exception is an existing RawTherapee sidecar, which is backed up first (below) and keeps your settings as locked edits.
 - **The trash stays on the drive.**
   - Files trashed on the Elements drive go to its own trash folder, `/srv/external-drive/.Trash-1000/`. Phase 0 found your earlier deletions there.
   - Before each trash operation, the app checks that the trash is on the same drive. If it isn't, the app refuses instead of falling back to copying and deleting.

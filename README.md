@@ -6,7 +6,7 @@ The machine does the technical edits: white balance, exposure and tone, color, s
 
 **Status:** Phase 0 (foundations and spikes) is done; Phase 1 (folder scan, analysis and culling UI) is next. [PROJECT_STATUS.md](PROJECT_STATUS.md) says what is built.
 
-- [Implementation plan (draft v0.3)](IMPLEMENTATION_PLAN.md): architecture, agents, UI, evaluation, roadmap, and the decisions so far.
+- [Implementation plan](IMPLEMENTATION_PLAN.md): architecture, agents, safety, UI, evaluation, roadmap, and the decisions so far.
 - [Architecture decision records](docs/adr/README.md): what the Phase 0 spikes measured and decided.
 - [Setup](docs/setup.md): requirements, models, samples, and the photo drive.
 

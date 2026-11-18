@@ -1,6 +1,6 @@
 # ADR 0002: What D7100 NEFs carry, and what the shoot folders hold
 
-- **Status:** accepted; one finding needs the owner's decision (existing sidecars)
+- **Status:** accepted. The owner's decision on the existing sidecars is in plan v0.4 (§12 rows 5 and 14): they are kept as locked edits, and each is backed up once before the app first adds to it.
 - **Date:** 2026-11-17 (Phase 0, spike b)
 - **Script:** `scripts/spikes/nef_metadata.py`
 

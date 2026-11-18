@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 The state of the code. Notes about one installation, such as its photo drive and sample set, belong in the Git-ignored `local/` folder.
 
@@ -39,22 +39,24 @@ The state of the code. Notes about one installation, such as its photo drive and
 - Everything from Phase 1 on:
   - the catalog and `rie open`;
   - the folder scan, previews and analysis;
-  - grouping, the culling UI and the trash at Done culling;
+  - grouping, the three piles, the culling UI and the trash at Done culling;
+  - the safe file operations of plan §3.5;
   - the edit agents, sidecars and export;
   - the real MCP server and the Claude runner;
-  - the style memory.
+  - taste learning and the look lab.
 
 ## Next steps
 
-1. **Owner decisions** that Phase 0 surfaced:
-   - What to do with the 4,205 existing RawTherapee sidecars, which hold ratings and edits (ADR 0002; decisions 5 and 14).
-   - Whether 2048 px previews may take about 3 s, or should skip capture sharpening to reach about 2.3 s (ADR 0001).
+1. **Owner decisions** that Phase 0 surfaced are settled in plan v0.4 (§12):
+   - The 4,205 existing RawTherapee sidecars are kept as the owner's locked edits, and each is backed up once before the app first adds to it (ADR 0002; rows 5 and 14).
+   - Culling shows only the embedded JPEGs. Edited previews use a fast profile without capture sharpening or raw CA correction, rendered in the background (ADR 0001; row 17).
 2. **Phase 1 starts** with the catalog and `rie open <folder>`:
    - the folder scan, skipping `._*` AppleDouble files;
    - RAW+JPEG pairing and content hashes;
    - one batched exiftool call per folder, with `-n` plus a printed `LensID`;
    - embedded previews read by byte range: `OtherImage` (1620 × 1080) for the grid, `JpgFromRaw` (6000 × 4000) for the loupe;
-   - drive detection wired into the scan and the jobs.
+   - drive detection wired into the scan and the jobs;
+   - the file-operations module of plan §3.5, before any code writes to the drive.
 3. Faces per ADR 0003:
    - YuNet at 1600 px;
    - tiling for group shots, kept only with landmark confirmation and containment suppression;

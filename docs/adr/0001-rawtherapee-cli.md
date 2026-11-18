@@ -1,6 +1,6 @@
 # ADR 0001: Driving rawtherapee-cli 5.13 with stacked partial profiles
 
-- **Status:** accepted
+- **Status:** accepted. The preview choice it raised is settled in plan v0.4 (§12 row 17): culling shows the embedded JPEGs, and edited previews use a fast profile without capture sharpening.
 - **Date:** 2026-11-17 (Phase 0, spike a)
 - **Scripts:** `scripts/spikes/rt_keys.py`, `scripts/spikes/rt_timing.py`, `scripts/spikes/rt_demosaic.py`
 
