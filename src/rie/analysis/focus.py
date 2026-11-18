@@ -201,14 +201,14 @@ def inspect(
         return result
     where = {"eyes": "the eyes", "face": "the face", "af": "the AF point", "frame": "the sharpest detail"}[subject]
     if subject_blur <= SHARP:
-        result.verdict, result.reason = "sharp", f"{where} sharp"
+        result.verdict, result.reason = "sharp", f"{where} {'are' if subject == 'eyes' else 'is'} sharp"
     elif background is not None and background <= SHARP and background < MISSED_RATIO * subject_blur:
-        result.verdict, result.reason = "missed", f"focus missed: background sharper than {where}"
+        result.verdict, result.reason = "missed", f"focus missed: the background is sharper than {where}"
     elif shake >= SHAKE_SHARE:
         result.verdict, result.reason = "shake", "camera shake: the whole frame is blurred in one direction"
     elif motion >= DIRECTIONAL or (handheld is not None and handheld > 1.0):
         slow = f" at 1/{1 / float(exposure):.0f} s" if handheld is not None and handheld > 1.0 and exposure else ""
         result.verdict, result.reason = "motion", f"motion blur at {where}{slow}"
     else:
-        result.verdict, result.reason = "soft", f"{where} soft"
+        result.verdict, result.reason = "soft", f"{where} {'are' if subject == 'eyes' else 'is'} soft"
     return result

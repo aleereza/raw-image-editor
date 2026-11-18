@@ -18,6 +18,7 @@ from . import catalog, sidecars
 from .analysis.folder import GroupStats, run_grouping
 from .analysis.run import AnalysisStats, run_analysis
 from .config import Config
+from .cull.piles import SortStats, sort_folder
 from .scan import files, previews
 from .scan.folder import ScanSummary, folder_path, scan_folder
 
@@ -131,6 +132,7 @@ class OpenResult:
     sidecars: sidecars.ImportStats | None = None
     analysis: AnalysisStats | None = None
     groups: GroupStats | None = None
+    sort: SortStats | None = None
 
 
 def open_folder(
@@ -153,4 +155,5 @@ def open_folder(
     if analyze:
         result.analysis = run_analysis(conn, cfg, summary.folder_id, progress=progress, workers=workers)
     result.groups = run_grouping(conn, summary.folder_id)
+    result.sort = sort_folder(conn, summary.folder_id)
     return result

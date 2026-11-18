@@ -18,6 +18,8 @@ dependencies = [
   "opencv-python-headless>=5.1,<6",
   # Every 1.x release (1.0.1 to 1.2.3) ran out of memory creating the Face Landmarker here; see ADR 0003.
   "mediapipe==0.10.35",
+  # The personal culling model (plan §4.11): gradient boosting that retrains in seconds after each folder.
+  "scikit-learn>=1.7,<2",
 ]
 
 [dependency-groups]

@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 
 from . import catalog, config, drive, locations, safety
+from .cull import actions
+from .cull.actions import CullError
 from .engine.rawtherapee import RenderError, RenderResult
 from .engine.recipe import RecipeError
 from .engine.recipe import load as load_recipe
@@ -42,6 +44,10 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("folder", type=Path, help="the shoot folder")
     o.add_argument("--no-analysis", action="store_true", help="only scan and make previews")
     o.add_argument("--workers", type=int, help="analysis processes (default: analysis.workers)")
+
+    rs = commands.add_parser("restore", help="move a folder's trashed rejects (or one photo) back from the trash")
+    rs.add_argument("folder", type=Path, help="the shoot folder")
+    rs.add_argument("--photo", help="only this photo, by file name")
     return parser
 
 
@@ -163,6 +169,36 @@ def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     if result.groups is not None:
         g = result.groups
         print(f"groups: {g.scenes} scenes, {g.bursts} bursts ({g.in_bursts} photos in bursts of two or more)")
+    if result.sort is not None:
+        piles = result.sort.piles
+        print(
+            f"sorted by {result.sort.model}: {piles['your_call']} your call, {piles['auto_reject']} auto-reject, "
+            f"{piles['auto_keep']} auto-keep"
+        )
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace, cfg: config.Config) -> int:
+    conn = catalog.connect(cfg.catalog_path)
+    try:
+        location = locations.locate(args.folder, cfg)
+        row = conn.execute(
+            "SELECT id FROM folders WHERE drive_uuid = ? AND path = ?", (location.drive_uuid, location.path)
+        ).fetchone()
+        if row is None:
+            raise CullError(f"{args.folder} is not in the catalog")
+        if args.photo:
+            image = conn.execute(
+                "SELECT id FROM images WHERE folder_id = ? AND name = ?", (row["id"], args.photo)
+            ).fetchone()
+            if image is None:
+                raise CullError(f"no photo {args.photo} in {args.folder}")
+            count = actions.restore(conn, cfg, image_id=image["id"])
+        else:
+            count = actions.restore(conn, cfg, folder_id=row["id"])
+    finally:
+        conn.close()
+    print(f"restored {count} files")
     return 0
 
 
@@ -176,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_check(cfg)
         if args.command == "open":
             return cmd_open(args, cfg)
+        if args.command == "restore":
+            return cmd_restore(args, cfg)
     except (
         config.ConfigError,
         RecipeError,
@@ -184,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         exif.ExifError,
         locations.DriveUnavailable,
         catalog.CatalogError,
+        CullError,
     ) as exc:
         print(f"rie: {exc}", file=sys.stderr)
         return 2
