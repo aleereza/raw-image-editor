@@ -1,12 +1,18 @@
 # RAW Image Editor — Implementation Plan
 
-**Draft v0.3 · 2026-11-17 · updated after the second review (§12)**
+**Draft v0.4 · 2026-11-17 · updated after Phase 0 and the third review (§12)**
 
 Camera: Nikon D7100 (NEF), mostly with an AF-S DX Nikkor 35mm f/1.8G, sometimes a Tokina AT-X M100 100mm f/2.8 Pro D Macro. Photos: shoot folders in `/srv/external-drive/Photos` on the 4.5 TB NTFS "Elements" USB drive. Target machine: Omarchy (Arch Linux) · Ryzen 7 3700X (8C/16T) · 32 GB RAM · GeForce GTX 1650 (4 GB). Already installed: RawTherapee 5.13, exiftool 13.55, LibRaw 0.22, libvips 8.18, lensfun 0.3.4, Claude Code 2.1.
 
 > **How to review:** §0 is the summary. §12 lists every decision so far. The rest is detail that follows from those.
 
 **Changelog**
+- **v0.4 (2026-11-17):**
+  - Culling is the main job to automate. The app pre-sorts each folder into auto-reject, auto-keep and your call, and each kind of decision goes automatic once it has proven it agrees with you.
+  - Learning your taste is built in from Phase 1: every decision is logged, a personal model retrains after each folder, and Claude reads taste notes that you can edit.
+  - Culling is Geeqie-fast because it uses only the camera's embedded JPEGs. Edited previews are pre-rendered in the background with a fast profile.
+  - Your existing RawTherapee edits are kept as your locked edits.
+  - The Phase 0 findings are folded in (§10).
 - **v0.3 (2026-11-17):**
   - You open a folder; the app never imports or reorganizes photos.
   - Everything you keep after culling is edited automatically.
@@ -20,15 +26,16 @@ Camera: Nikon D7100 (NEF), mostly with an AF-S DX Nikkor 35mm f/1.8G, sometimes 
 
 ## 0. TL;DR
 
-- **The workflow:** open a folder → AI culling suggestions → **you decide what to keep** → everything you keep is edited automatically → **you skim only the exceptions** → full-size JPEGs in `jpg/`.
+- **The workflow:** open a folder → the app pre-sorts it into obvious rejects, clear keepers and close calls → **you decide the close calls** and skim the rest → everything you keep is edited automatically → **you skim only the exceptions** → full-size JPEGs in `jpg/`.
 - **You choose the moment; the machine does the technical work.** The UI is a keyboard-driven culling and review tool, not a slider-heavy editor.
 - **Tuned for how you shoot:** family and kids, on a 35 mm f/1.8 and a 100 mm f/2.8 macro, neither of which has VR. The first automated check asks "are the eyes sharp, and is there motion blur?". Edits aim for a natural, accurate look.
+- **Learns your taste:** every keep and reject you make is recorded. A personal model and Claude's taste notes get better after each folder, and more of the culling becomes automatic as the app proves it agrees with you.
 - **Don't build a RAW engine.** RawTherapee 5.13 (already installed) does all rendering. The app drives it with generated `.pp3` profiles, which are plain text, documented, and stackable (`rawtherapee-cli -p base.pp3 -p image.pp3`). The app owns the *decisions* (analysis and agents) and RawTherapee owns the *pixels*. You can open any photo in the RawTherapee GUI, with the app's edits applied, to finish it by hand.
 - **Edits are parametric recipes, never baked pixels.** Every parameter records who set it (an agent, Claude or you), how confident it was, and why. Anything you change is locked, and nothing automatic overwrites it.
 - **Confidence routing:** if an agent is sure, the change is applied silently. If it's unsure, the change is applied conservatively and the photo goes into a short review queue. If it has no idea, the photo stays as shot and is flagged.
 - **Local checks measure; Claude judges.** Computer vision and small local models measure focus, white balance, exposure and the horizon. Claude runs through Claude Code on your existing account, with no API key. It helps in two automatic passes: it suggests the best frame in each burst, and after culling it refines the edits of everything you keep. Through an **MCP server**, you can also ask for edits in plain language from Claude Code.
 - **Stack:** Python + uv (same conventions as your other side projects), FastAPI, SQLite, and a Svelte UI on localhost.
-- **Roadmap:** Phase 1 makes culling faster (focus and eye checks, burst compare). Phase 2 edits everything you keep. Phase 3 adds Claude's culling and editing passes. Phase 4 learns your taste.
+- **Roadmap:** Phase 0 (scaffolding and spikes) is done and waiting for your review. Phase 1 makes culling fast and partly automatic, and starts learning from your decisions. Phase 2 edits everything you keep. Phase 3 adds Claude's culling and editing passes. Phase 4 keeps improving the personal model.
 
 ---
 
@@ -36,9 +43,9 @@ Camera: Nikon D7100 (NEF), mostly with an AF-S DX Nikkor 35mm f/1.8G, sometimes 
 
 ### Goals
 1. **Automate the technical edits:** white balance, exposure and tone, color, straightening and crop, lens corrections, noise reduction, and focus/blur detection.
-2. **Make the human decisions fast:** the best moment, the right smile, which frame of a burst. The local checks and Claude suggest; you decide.
+2. **Automate most of the culling:** the app decides the obvious keeps and rejects itself, and you only decide the close calls: the best moment, the right smile, which frame of a burst. How much it decides on its own grows as it learns your taste.
 3. **Keep RAW quality and non-destructive editing:** originals are never modified, and every edit is reproducible and reversible.
-4. **Learn your taste** from your overrides and picks.
+4. **Learn your taste** for both culling and editing, from every decision and override you make, plus any feedback you give.
 5. **Be scriptable and agent-drivable:** CLI, local API, MCP.
 
 ### Non-goals for v1
@@ -51,7 +58,7 @@ Camera: Nikon D7100 (NEF), mostly with an AF-S DX Nikkor 35mm f/1.8G, sometimes 
 - Other cameras. The design stays camera-agnostic, but tuning and tests target the D7100.
 
 ### Principles
-1. **You pick, the machine fixes.** AI ranks and suggests; only you pick or reject.
+1. **You decide the close calls; the machine handles the obvious ones.** A kind of decision only becomes automatic after it has proven it agrees with you, and you can always see and undo what the app decided.
 2. **Never destroy silently.** The app never writes to originals. Rejects go to the system trash only when you press Done culling, so you can still restore them from your file manager. The app never empties the trash or deletes anything permanently.
 3. **Parametric and reproducible.** The same recipe, engine version and agent versions always produce the same output.
 4. **Abstain when unsure.** Every agent reports a confidence. Low confidence means do little and flag the photo.
@@ -65,13 +72,15 @@ Camera: Nikon D7100 (NEF), mostly with an AF-S DX Nikkor 35mm f/1.8G, sometimes 
 ## 2. The workflow
 
 1. **Open a folder.** Copy the photos from the card as you do today, for example into `/srv/external-drive/Photos/20261116 - (raw) - <shoot name>/`, then open that folder in the app (`rie open <folder>` or from the UI). The app never moves, renames or reorganizes anything in it.
-2. **Browse right away.** A grid of the camera's embedded JPEG previews fills in within seconds, grouped into scenes and bursts.
-3. **Analysis runs in the background (minutes):**
+2. **Browse right away.** The camera's embedded JPEGs fill a grid within seconds, grouped into scenes and bursts. Flipping between photos is instant, like Geeqie.
+3. **The app pre-sorts the folder (minutes, in the background):**
    - local checks for focus and blur, closed eyes, smiles, exposure clipping and duplicates;
-   - then Claude's culling pass, which suggests the best frame in each burst or group of look-alike shots, with a reason.
-
-   Suggested rejects are flagged with a reason.
-4. **Cull** with the keyboard. Confirm or override the suggestions. In a burst, pick the moment, and the other frames become rejects unless you keep them too. When you press **Done culling**, the rejects move to the system trash.
+   - then Claude's culling pass, which suggests the best frame in each burst or group of look-alike shots, with a reason;
+   - then your personal model sorts every photo into **auto-reject**, **auto-keep** or **your call**, each with a reason.
+4. **Cull** with the keyboard:
+   - Decide the **your call** pile. In a burst, pick the moment, and the other frames become rejects unless you keep them too.
+   - Skim the **auto-reject** pile in one grid and rescue anything it got wrong.
+   - Press **Done culling**. Rejects move to the system trash, and every decision you made or accepted teaches the model.
 5. **Everything you kept is edited automatically:** straighten → white balance → exposure and tone → color → harmonize across the scene → render → QA → Claude's editing pass.
 6. **Review only the exceptions.** See before/after and the reason for each change. Nudge (±EV, warmer/cooler, rotate), reset, lock, or apply to the whole scene.
 7. **Export:** one full-size JPEG per kept photo, written to `jpg/` inside the folder. Your overrides train the style model.
@@ -119,7 +128,7 @@ flowchart LR
 
 | # | Decision | Proposal | Alternatives considered | Why |
 |---|---|---|---|---|
-| D1 | Render engine | **Confirmed.** RawTherapee 5.13 via `rawtherapee-cli` and generated `.pp3` profiles | Own NumPy/PyTorch pipeline on rawpy; darktable-cli + XMP; ART | RawTherapee already has mature demosaicing (AMaZE, RCD), noise reduction, capture sharpening, lensfun and a bundled `NIKON D7100.dcp`. Its text profiles are easy for agents to write and diff. darktable stores module parameters as binary blobs per module version, which are hard to generate. Writing our own pipeline would mean months of image science before the first good JPEG. |
+| D1 | Render engine | **Confirmed, and validated in Phase 0 (ADR 0001).** RawTherapee 5.13 via `rawtherapee-cli` and generated `.pp3` profiles | Own NumPy/PyTorch pipeline on rawpy; darktable-cli + XMP; ART | RawTherapee already has mature demosaicing (AMaZE, RCD), noise reduction, capture sharpening, lensfun and a bundled `NIKON D7100.dcp`. Its text profiles are easy for agents to write and diff. darktable stores module parameters as binary blobs per module version, which are hard to generate. Writing our own pipeline would mean months of image science before the first good JPEG. |
 | D2 | Edit format | Engine-neutral recipe JSON in the catalog, compiled to `.pp3`. The catalog is the source of truth. | Write `.pp3` directly | Allows provenance, confidence, locks and history per parameter, and keeps a second engine possible later |
 | D3 | UI | **Confirmed.** Local web app in a normal browser tab: Svelte 5 + Vite + TypeScript, served by the backend | htmx + Jinja (no JS build step); a native Qt Quick app | Keyboard-heavy culling, prefetching and compare views are simpler client-side. Works in any browser and can run in an app window. |
 | D4 | Analysis input | rawpy (LibRaw) linear decodes + embedded JPEGs | RawTherapee renders | Fast, linear sensor data for measuring; the embedded JPEG gives instant culling |
@@ -138,9 +147,11 @@ flowchart LR
 - `faces`: box, landmarks, eyes open (L/R), smile, head pose, sharpness, track id within the burst. No identities.
 - `proposals`: source (an agent or Claude) and its version, parameters, confidence, rationale, evidence (debug images), status. Claude's burst suggestions are stored here too.
 - `recipes` + `recipe_history`: current parameters, locks, engine and engine version.
-- `decisions`: pick/reject, rating, color label, who decided (you, or you accepting a suggestion), when.
+- `decisions`: keep/reject, rating, color label, which pile the app put the photo in and why, who made the final call (you, or you accepting the app's sort), an optional reason you gave, and when. This is the training data for culling.
 - `overrides`: parameter, agent value, your value, context. This is the training data for the style model.
-- `jobs`, `exports`.
+- `jobs`, `exports`, and `models`: each version of your personal culling model with its measured agreement, so a worse one can be rolled back.
+
+**Taste notes:** a short Markdown file in the app's data folder (`~/.local/share/rie/taste.md`) that describes your preferences in plain words. It's drafted from your decisions and feedback, you can edit it, and Claude reads it in both passes.
 
 **Recipe** (one per image, versioned):
 
@@ -191,6 +202,7 @@ rawtherapee-cli -q -Y -o out/ -p profiles/d7100-base.pp3 -p cache/IMG_1234.agent
 /srv/external-drive/Photos/20261116 - (raw) - <name>/jpg/    full-size JPEG exports
 /srv/external-drive/.Trash-1000/                             rejects after "Done culling" (the drive's own system trash)
 ~/.local/share/rie/catalog.db                                catalog (backed up on every run)
+~/.local/share/rie/taste.md                                  taste notes that you can edit; Claude reads them
 ~/.cache/rie/<image-hash>/                                   thumbnails, 2048 px previews, face crops, burst sheets, analysis, renders
 ```
 
@@ -200,7 +212,13 @@ rawtherapee-cli -q -Y -o out/ -p profiles/d7100-base.pp3 -p cache/IMG_1234.agent
 - If the drive isn't connected, the app says so instead of showing an empty folder. You can still browse and cull from the cached 2048 px previews. Anything that needs the RAW files (100% zoom, renders, exports) waits until the drive is back.
 - NTFS doesn't reliably keep Unix read-only permissions, so the app itself guarantees it never opens an original for writing.
 
-**RawTherapee GUI round-trip.** The managed `IMG_xxxx.NEF.pp3` next to each original holds the complete profile, so opening the folder in RawTherapee shows exactly what the app renders. If you edit a photo there, the app notices the changed sidecar and imports the changed values as your locked parameters. Keys the app doesn't model are kept as they are. You're starting fresh, so there are no older sidecars to bring in. As a safety net, the app never overwrites a sidecar it didn't write. Ratings are mirrored into the profile (`[General] Rank`), so RawTherapee's file browser shows them too.
+**RawTherapee GUI round-trip.** The managed `IMG_xxxx.NEF.pp3` next to each original holds the complete profile, so opening the folder in RawTherapee shows exactly what the app renders. If you edit a photo there, the app notices the changed sidecar and imports the changed values as your locked parameters. Keys the app doesn't model are kept as they are. Ratings are mirrored into the profile (`[General] Rank`), so RawTherapee's file browser shows them too.
+
+**Your existing RawTherapee edits are kept.**
+- Many photos already have a sidecar with your ratings and edits; Phase 0 found 4,205 on the drive.
+- The app reads them. Ratings become your ratings, and every value that differs from RawTherapee's defaults (exposure, white balance, crop and so on) becomes one of your locked parameters. The agents only fill in what you left at the default.
+- Before the app first adds anything to an existing sidecar, it saves a copy in its data folder. It never removes or changes your keys.
+- These sidecars also serve as reference edits for testing the agents (§9).
 
 ### 3.4 Pipeline and jobs
 
@@ -215,7 +233,9 @@ flowchart TD
   E & F & G --> H["grouping: scenes and bursts"]
   H --> I["local cull checks + burst ranking"]
   I --> CP["Claude culling pass: best frame per burst"]
-  CP --> J{"you cull"}
+  CP --> PS["personal model: three piles"]
+  PS --> J{"you cull"}
+  J -.->|"teaches"| PS
   J -->|"rejects, at Done culling"| T["drive's system trash"]
   J -->|"everything you keep"| K["geometry agent"]
   K --> L["white balance agent"]
@@ -259,7 +279,11 @@ The orchestrator merges proposals into the recipe, skipping any parameter you lo
 - RAW+JPEG pairs (same file name, like your "(raw jpg)" shoots) count as one photo. The camera JPEG follows its NEF to the trash if you reject it.
 - There's no backup for now (your choice), so the app's only destructive action is moving rejects to the trash, where you can restore them (§11).
 - Metadata comes from one `exiftool -json -n -G1` call per folder, which is fast. These D7100 fields are used downstream, and all of them are in exiftool 13.55's Nikon tables: `SubSecTimeOriginal`, `ShutterCount`, `LensID`, `FocalLength`, `FNumber`, `ExposureTime`, `ISO`, `ExposureCompensation`, `Flash`, `ActiveD-Lighting`, `VibrationReduction`, `AFAreaMode`, `PrimaryAFPoint` / `AFPointsUsed` / `AFPointsInFocus`, `FocusDistance`, `WhiteBalance`, `PictureControlName`, `Orientation`, and the image area (DX 6000×4000 or 1.3× crop 4800×3200).
-- Extract the embedded JPEG with `exiftool -b -JpgFromRaw`. D7100 NEFs should contain a full-size one (to confirm in Phase 0), which gives an instant grid and 100% zoom without demosaicing. Thumbnails are made with libvips.
+- **Embedded JPEGs (confirmed in Phase 0):** every NEF carries a full-size 6000×4000 JPEG (`JpgFromRaw`) plus a 1620×1080 one. When a folder opens, the app extracts them and caches screen-sized copies on the internal disk with libvips. That's what makes culling instant: no demosaicing at all.
+- **What the D7100 records (Phase 0):**
+  - `PrimaryAFPoint` and `AFPointsUsed`, but never `AFPointsInFocus`;
+  - `SubSecTimeOriginal`, but only to 1/10 s, which is still enough to order burst frames;
+  - `FocusDistance`, which is coarse on the 35 mm and meaningless on the Tokina.
 
 ### 4.2 Grouping: scenes and bursts
 - **Burst:** consecutive frames no more than ~0.7 s apart (the D7100 shoots 6 fps, or 7 fps in 1.3× crop), with the same focal length and settings and a similar look.
@@ -274,7 +298,7 @@ The question is "is the **subject** sharp?", not "is the image sharp?". A portra
 - **Sharpness map:** for each tile, gradient energy normalized by local contrast, minus an ISO-dependent noise floor estimated in flat tiles, so high-ISO grain doesn't read as detail.
 - **Where to look:**
   - eyes and faces from the face model;
-  - the AF points the camera used (the 51-point layout mapped to pixels);
+  - the AF points the camera used (`PrimaryAFPoint` and `AFPointsUsed`, with the 51-point layout mapped to pixels);
   - a subject/saliency detector for shots without people.
 - **Verdicts:**
   - `sharp`
@@ -287,36 +311,52 @@ The question is "is the **subject** sharp?", not "is the image sharp?". A portra
   - At f/1.8 on the 35 mm, depth of field at 1 m is only about 6 cm. Focus landing on the eyelashes or ears instead of the eyes is a real, common miss.
   - Neither lens has VR. The shake threshold is about 1/50 s on the 35 mm and 1/150 s on the 100 mm, and twice as fast for pixel-level sharpness on 24 MP. Kids moving indoors in low light are the main source of motion blur.
   - Close-up macro shots with the Tokina have a tiny in-focus zone by design. They're judged on whether the most salient detail is sharp, not on how much of the frame is.
-- **Calibration:** thresholds per focal length, aperture and ISO bucket are fitted on the golden set. Depth of field, from focus distance, focal length and aperture (DX circle of confusion ≈ 0.02 mm), tells whether a sharp background is expected.
+- **Calibration:** thresholds per focal length, aperture and ISO bucket are fitted on the golden set. Depth of field, from focus distance, focal length and aperture (DX circle of confusion ≈ 0.02 mm), tells whether a sharp background is expected. On the Tokina, whose recorded focus distance is meaningless, the app skips this check.
 - **v2:** a small CNN trained on your own sharp frames with synthetic defocus and motion kernels plus ISO-matched noise. It's self-supervised, so no manual labels are needed.
 - **UI:** a focus heatmap overlay, and a jump to 100% on the eyes or AF point.
 - **Metric:** recall ≥ 95% on `missed`/`motion` at precision ≥ 80%. Missing a soft photo is worse than a false alarm, because nothing is deleted automatically.
 
-### 4.4 Culling assistant (you decide)
+### 4.4 Culling: pre-sorting, automation and your decisions
+
+Culling and deleting take you the most time today, so this is the part the app automates most, in steps you control.
+
 - **Per face:**
-  - YuNet (OpenCV Zoo) finds faces, run on tiles so small faces in group shots aren't missed.
+  - YuNet (OpenCV Zoo) finds faces at 1600 px. In Phase 0 it found all 9 faces in an outdoor group shot in 59 ms.
+  - Tiling finds a few more small faces, but also false ones, so a face found on a tile counts only when the landmarker confirms it.
+  - YuNet missed some close-ups where the face fills the frame, so those fall back to MediaPipe's own detector.
   - MediaPipe Face Landmarker, run on each face crop, gives eyes open (`eyeBlinkLeft/Right`), smile (`mouthSmileLeft/Right`) and head pose (is the person looking at the camera?).
+  - Blinks are judged relative to the rest of the burst, because laughing or looking down scores like half-closed eyes.
   - Face sharpness comes from §4.3, along with whether the face is cut off by the frame edge.
 - **Tracking, not recognition:** faces are matched across a burst by position and overlap. Nothing about who people are is computed or stored.
-- **Frame score** (a suggestion only):
-  - starts from a soft minimum over people of (eyes open × face sharpness × facing the camera);
-  - adds a smile bonus, configurable per scene, because not every photo needs a smile;
-  - subtracts penalties for blur, motion and exposure;
-  - can add an optional aesthetic-quality prior.
+- **Local frame score:**
+  - a soft minimum over people of (eyes open × face sharpness × facing the camera);
+  - a smile bonus, configurable per scene, because not every photo needs a smile;
+  - penalties for blur, motion and exposure;
+  - an optional aesthetic-quality prior.
 
-  Shots without people (pets, sports, landscapes) are scored on subject sharpness and image quality instead.
-- **Claude's culling pass:** for each burst or group of look-alike shots, the app builds one numbered side-by-side sheet (the frames plus their face crops). Claude suggests the best frame with a one-line reason, e.g. "#4: everyone's eyes are open and the baby is looking at the camera; #2 has motion blur on the hand", and can flag frames it would reject. Single shots only get the local checks. One sheet per group instead of one image per frame keeps usage low.
-- **Suggested rejects** are never deleted, and each comes with a one-line reason:
-  - severe blur or missed focus;
-  - everyone's eyes closed;
-  - blank frames (lens cap, shots of the ground);
-  - exposure that can't be recovered;
-  - duplicates that are worse than a sibling.
-- **Honest summaries:** when no frame is perfect, it says so, e.g. "best: #4, 1 of 6 people blinking".
+  Shots without people (pets, landscapes) are scored on subject sharpness and image quality instead.
+- **Claude's culling pass:** for each burst or group of look-alike shots, the app builds one numbered side-by-side sheet: the frames plus their face crops.
+  - Claude reads your taste notes (§4.11), then suggests the best frame with a one-line reason, e.g. "#4: everyone's eyes are open and the baby is looking at the camera; #2 has motion blur on the hand". It can also flag frames it would reject.
+  - Single shots only get the local checks.
+  - One sheet per group instead of one image per frame keeps usage low.
+
+**Three piles.** Your personal model (§4.11) combines the local scores and Claude's suggestion into a probability that you'd reject each photo. It then sorts the folder:
+
+| Pile | What goes in | What you do |
+|---|---|---|
+| **Auto-reject** | Photos it's very sure you'd reject: a missed focus, a blank frame, a duplicate clearly worse than its sibling, closed eyes when a sibling has them open | Skim one grid and rescue mistakes |
+| **Auto-keep** | Clearly good photos that aren't duplicates | Nothing, unless you want to look |
+| **Your call** | Everything it isn't sure about, especially close calls on expression and moment | Decide these; this is where your time goes |
+
+Each photo carries a one-line reason for its pile. When no frame of a burst is perfect, the reason says so, e.g. "best: #4, 1 of 6 people blinking".
+
+- **The trust dial:** each kind of decision has its own switch, set either to "suggest" (the photo lands in your call, with a suggestion) or "automatic" (it goes straight to its pile). The kinds are technical failures, duplicates, closed eyes, expression and moment, and composition.
+  - At first, only technical failures and clearly worse duplicates are automatic. Expression and moment stay on "suggest", as you asked.
+  - The app proposes switching a kind to automatic once it agreed with your final decision at least 95% of the time over your last few folders. You make the switch.
 - **Picking in a burst:** choosing a frame marks the rest of the burst as rejects; hold Shift to keep more than one.
 - **Done culling:** when you press it, the folder's rejects (with their sidecars and paired camera JPEGs) move to the system trash on the external drive, where your file manager can restore them. Everything you kept goes on to editing. Until then a reject is just a flag you can undo, and rejected frames stay visible in burst compare.
-- **Learning:** every pick is recorded as a preference (the chosen frame beat its siblings). Phase 4 uses these to personalize the ranking.
-- **Metric:** Claude's suggestion is your pick in ≥ 60% of bursts, and your pick is in the local top 3 in ≥ 85% (targets to revisit after Phase 0).
+- **Metrics, shown per folder:** the share of photos decided automatically, how often you changed the app's sort, and the minutes you spent culling.
+- **Initial targets:** after about five folders, half the photos are decided automatically with ≥ 95% agreement, and Claude's suggestion is your pick in ≥ 60% of bursts.
 
 ### 4.5 Geometry: straighten and crop
 - **Estimates:**
@@ -376,7 +416,7 @@ The question is "is the **subject** sharp?", not "is the image sharp?". A portra
 - **Metric:** mean ΔE2000 ≤ 3 on ColorChecker patches.
 
 ### 4.9 Technical baseline (rules, not AI)
-- Lens corrections from lensfun (distortion, vignetting, lateral CA), looked up by `LensID`. Both of your lenses are in lensfun 0.3.4's database with distortion, TCA and vignetting data: the AF-S DX Nikkor 35mm f/1.8G and the Tokina AT-X M100 100mm f/2.8 Pro D Macro.
+- Lens corrections from lensfun (distortion, vignetting, lateral CA), looked up by `LensID`. Both of your lenses are in lensfun 0.3.4's database. The AF-S DX Nikkor 35mm f/1.8G has distortion, TCA and vignetting data. Phase 0 found that the entry matching the Tokina AT-X M100 100mm f/2.8 Pro D Macro has no vignetting data; a few flat-field shots could fill that in later.
 - Demosaicing with AMaZE or RCD. The D7100 has no optical low-pass filter, so it is prone to moiré; compare both on real shots in Phase 0.
 - Capture sharpening with auto radius, plus output sharpening per export size.
 - Noise reduction based on the **effective ISO** = ISO × 2^(exposure push), using a table tuned on the golden set.
@@ -392,12 +432,37 @@ The question is "is the **subject** sharp?", not "is the image sharp?". A portra
   - optionally, a before/after image-quality score ("did the edit make it worse?").
 - If a check fails, the agent re-adjusts once; if it still fails, the photo is queued for review.
 
-### 4.11 Style memory (personalization)
-- Every override is stored as (image features, agent or Claude value, your value). So is every burst where you picked a different frame from Claude's suggestion.
-- **v1:** a bias per scene type, such as "+0.2 EV on indoor portraits" or "200 K warmer at golden hour".
-- **v2:** nearest neighbors in embedding space over your accepted recipes: "edit it like the similar photos I already finished".
-- **v3:** gradient-boosted models for parameter deltas, plus a pairwise ranking model for bursts trained on your picks.
-- **Guardrail:** a style model ships only if replaying held-out shoots shows fewer and smaller overrides.
+### 4.11 Learning your taste
+
+Most of your feedback comes from simply culling and reviewing as usual: the app learns from what you do.
+
+**What it learns from**
+- **Every decision, automatically:**
+  - keep or reject;
+  - which frame you picked in a burst;
+  - each time you moved a photo out of the pile the app chose;
+  - every edit you changed, recorded as the image features, the app's or Claude's value, and your value.
+- **Optional quick reasons:** when you overrule the app, a small picker offers blur, eyes, expression, duplicate or composition. Press one key, or ignore it.
+- **Notes in your own words:** type them in a "tell the app" box, or just tell Claude in Claude Code, e.g. "I prefer candid laughs over posed smiles". They go into your taste notes.
+- **Your history, if you agree (still open, §12):**
+  - your existing RawTherapee ratings and edits;
+  - the photos still in your folders, as keepers;
+  - the NEFs in the drive's trash, as rejects;
+  - old bursts where only one frame survived, as your picks.
+
+  This is all read-only and local, and none of it goes to Claude.
+
+**How it uses that**
+- **Personal culling model:** a small gradient-boosted model predicts whether you'd reject a photo. It uses the local features: sharpness at the eyes, eyes open, smile, gaze, motion blur, clipping, rank within the burst, Claude's suggestion and scene type. A pairwise ranker learns which frame you pick in a burst. Both retrain after each folder, in seconds, on this machine.
+- **Taste notes for Claude:** after each folder, Claude drafts updates to `taste.md` from the cases where you disagreed with it, e.g. "keeps laughing shots even with half-closed eyes" or "rejects frames where the baby looks away". You approve or edit each change, and both of Claude's passes read the notes.
+- **Editing taste:** it builds up in three steps:
+  1. per-scene biases, such as "+0.2 EV on indoor portraits";
+  2. nearest neighbors over your accepted edits: "edit it like the similar photos I already finished";
+  3. gradient-boosted models for parameter changes.
+
+**Guardrails**
+- A new model version replaces the old one only if replaying your recent folders shows that it agrees with you at least as well. Every version is kept, so a worse one can be rolled back.
+- The trust dial (§4.4) only goes automatic with your OK.
 
 ---
 
@@ -407,7 +472,7 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 
 | Pass | What Claude does | When | What it sees |
 |---|---|---|---|
-| **Culling pass** | Suggests the best frame in each burst or group of look-alike shots, with a one-line reason, and flags frames it would reject | Automatically, after the local checks, when you open a folder | One numbered side-by-side sheet per group: the frames plus their face crops |
+| **Culling pass** | Suggests the best frame in each burst or group of look-alike shots, with a one-line reason, and flags frames it would reject, guided by your taste notes | Automatically, after the local checks, when you open a folder | One numbered side-by-side sheet per group: the frames plus their face crops |
 | **Editing pass** | Reviews each kept photo's before/after render and adjusts the agents' parameters within bounds, with a reason. It can zoom to 100% on eyes and skin. | Automatically, after you press Done culling, for everything you kept | Before/after previews (~1024 px), histogram and clipping mask, plus crops on request |
 | **Ask anything** | Handles requests like "These indoor shots look too yellow. Cool them a bit and keep the faces bright." | When you ask, in Claude Code | The same tools, interactively |
 
@@ -417,7 +482,7 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 - The same MCP server also works in an interactive Claude Code session, for "ask anything".
 - Results land in the catalog as proposals, the same way the local agents' results do, so the review UI shows them identically.
 
-**MCP tools (sketch):** `list_folders`, `get_group_sheet(group)`, `suggest_frames(group, ranking, reasons)`, `get_image(id)` (metadata, analysis, recipe and reasons), `get_preview(id, size, before_or_after)`, `crop_zoom(id, bbox)`, `propose_edit(ids or scene, deltas, reason)`, `render(ids)`.
+**MCP tools (sketch):** `list_folders`, `get_group_sheet(group)`, `suggest_frames(group, ranking, reasons)`, `get_image(id)` (metadata, analysis, recipe and reasons), `get_preview(id, size, before_or_after)`, `crop_zoom(id, bbox)`, `propose_edit(ids or scene, deltas, reason)`, `render(ids)`, `get_taste_notes()`, `propose_taste_note(text, examples)`.
 
 **Guardrails**
 - Claude's culling suggestions are only suggestions; every keep/reject decision is yours.
@@ -427,6 +492,7 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 
 **Practical notes**
 - **Usage:** a 400-frame folder with ~60 bursts means about 60 sheets for culling, plus one review per kept photo for editing. Runs work in chunks and resume, so hitting your plan's usage limit only pauses them. The app shows how far each pass has got.
+- **Measured in Phase 0:** two bursts took 19 s on Opus 5.5, and both picks were sensible. `--bare` can't be used, because it ignores the subscription login.
 - **Reproducibility:** Claude's answers aren't deterministic, so each one is cached by (image hash, recipe hash, prompt version) and kept in the proposal history.
 - **Model:** whichever model your Claude Code is set to. The passes don't hard-code one.
 - **Privacy:** Claude sees only downscaled previews and sheets (no RAW files, no location), and those include your family's faces. A folder can opt out, and `--no-claude` runs everything locally.
@@ -439,14 +505,17 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 **Views**
 1. **Folders:** recently opened folders with their progress (analyzed → culled → edited → exported), and a field to open another folder by path.
 2. **Cull:**
+   - three tabs for the piles: **your call** (opens first), **auto-reject** (one dense grid to skim and rescue from) and **auto-keep**;
    - a grid grouped by scene, with bursts collapsed to their best frame and a count;
    - a loupe that shows the embedded JPEG;
-   - badges for focus verdict, eyes and clipping, plus Claude's suggested frame and its reason;
+   - badges for focus verdict, eyes and clipping, plus the pile's reason and Claude's suggested frame;
    - a focus heatmap and 100% zoom on the eyes or AF point;
+   - the optional reason picker, shown when you overrule the app;
    - a **Done culling** button. It shows how many rejects there are, moves them (with paired camera JPEGs) to the system trash, and starts editing everything you kept.
 3. **Burst compare:** 2–6 frames side by side, plus **face strips** with one row per person and one column per frame. Each strip is a 100% crop with eyes, smile and sharpness badges, so finding the frame where everyone looks right takes one glance. Claude's suggested frame is marked. Picking a frame rejects the others; Shift keeps more than one.
 4. **Review:** everything you kept, with a "needs a look" filter and before/after. Each changed parameter gets a chip with the agent's reason and confidence, e.g. "WB 5450 K · 82% · gray-edge and skin agree". From here you can nudge, reset to as-shot, lock, apply to the burst or scene, or open the photo in RawTherapee.
 5. **Export:** one button that writes full-size JPEGs of everything you kept into `jpg/` inside the folder, with metadata (artist/copyright) and progress.
+6. **Taste:** your taste notes (editable), Claude's proposed changes to approve, the trust-dial switches, and how well the app agreed with you, folder by folder.
 
 **Keyboard (draft)**
 
@@ -461,7 +530,13 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 | C | burst compare | E | open in RawTherapee |
 | A | accept Claude's burst suggestion | ? | help |
 
-**Fast but accurate:** nudges preview instantly in the browser (WebGL gain, exposure and rotation applied to the current preview). Meanwhile the real RawTherapee render (~1–2 s) runs in the background and replaces it. Next and previous images are prefetched.
+**Speed**
+- **Culling is Geeqie-fast.** It never waits on RawTherapee. It shows the camera's embedded JPEGs: screen-sized copies cached when the folder opens, and the full-size one for 100% zoom. The browser prefetches and decodes the next and previous five photos.
+  - Targets: ≤ 50 ms to flip to the next photo, ≤ 150 ms to zoom to 100%.
+- **Edited previews are ready before you look.** After Done culling, every kept photo is rendered in the background with a fast preview profile, four renders at a time. The profile skips capture sharpening and raw CA correction, which only matter at close zoom.
+  - Phase 0 measured 1.8 s per image with four renders in parallel on the full profile, and 1.7 s for a single render with the slow steps off. In parallel, the fast profile should get close to 1 s per image (to measure).
+  - The export always uses the full profile.
+- **Nudges preview instantly** in the browser (WebGL gain, exposure and rotation applied to the current preview), and the real render replaces them a moment later.
 
 **API sketch:** `GET /api/shoots`, `GET /api/shoots/{id}/groups`, `GET /api/images/{id}`, `GET /api/images/{id}/preview?kind=embedded|render&size=…`, `GET /api/images/{id}/faces`, `POST /api/images/{id}/decision`, `PATCH /api/images/{id}/recipe`, `POST /api/groups/{id}/apply`, `POST /api/jobs`, `GET /api/events` (SSE).
 
@@ -470,7 +545,8 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 ### 6.1 Export
 
 There is one export: a full-size JPEG per kept photo, written to `jpg/` inside the folder with the same base name (`IMG_1234.NEF` becomes `jpg/IMG_1234.jpg`).
-- Full resolution (or the crop, if there is one), sRGB, quality 95, no chroma subsampling (`-js3`), mild output sharpening, EXIF kept.
+- Full resolution (or the crop, if there is one), sRGB, quality 95, no chroma subsampling (`-js3`), mild output sharpening.
+- After rendering, exiftool copies the metadata over from the NEF. Phase 0 found that RawTherapee's JPEGs drop the sub-second time and the lens name.
 - Re-exporting after an edit overwrites that photo's JPEG.
 - Resizing for messaging apps or social media is left to those apps.
 
@@ -480,14 +556,15 @@ There is one export: a full-size JPEG per kept photo, written to `jpg/` inside t
 
 | Area | Choice | Notes |
 |---|---|---|
-| Runtime | Python 3.12 or 3.13, pinned with uv | System Python is 3.14, and ML wheels (onnxruntime, mediapipe, torch) lag behind; uv manages the interpreter |
+| Runtime | Python 3.13, pinned with uv (chosen in Phase 0) | System Python is 3.14; the whole stack also installs on 3.12 and 3.14 |
 | RAW decode for analysis | rawpy (LibRaw) | MIT; linear output, half-size decode, Bayer access |
 | Metadata | exiftool 13.55 | `-json` batch per folder, `-stay_open` for single files; a thin in-house wrapper |
 | Image operations | pyvips (libvips 8.18), OpenCV, NumPy, scikit-image, Pillow | thumbnails, crops, analysis |
 | Color math | colour-science | CCT/tint, CAT16, ΔE2000 |
-| Rendering | rawtherapee-cli 5.13 | stacked partial profiles; evaluate the `-f` fast-export pipeline for previews |
+| Taste model | LightGBM or scikit-learn gradient boosting | Small; retrains in seconds after each folder |
+| Rendering | rawtherapee-cli 5.13 | Stacked partial profiles: a fast preview profile and the full export profile (`-f` does nothing in the CLI, per Phase 0) |
 | ML inference | ONNX Runtime (CUDA on the GTX 1650, CPU fallback); PyTorch where needed | The GTX 1650 is fine for small models, not for local VLMs |
-| Models | YuNet (Apache-2.0), MediaPipe Face Landmarker (Apache-2.0), DINOv2 (Apache-2.0) or SigLIP embeddings, GeoCalib (Apache-2.0), optional IQA metrics via pyiqa (custom license, non-commercial terms) | `models/manifest.toml` records each model's source, hash and license. The app is for personal use only, so non-commercial weights (e.g. InsightFace) are allowed if they help |
+| Models | YuNet (MIT), MediaPipe Face Landmarker (Apache-2.0), DINOv2 (Apache-2.0) or SigLIP embeddings, GeoCalib (Apache-2.0), optional IQA metrics via pyiqa (custom license, non-commercial terms) | `models/manifest.toml` records each model's source, hash and license. The app is for personal use only, so non-commercial weights (e.g. InsightFace) are allowed if they help |
 | Claude | Claude Code 2.1 (installed), headless `claude -p` runs | Your existing account; no API key; no spending cap for now |
 | MCP | official MCP Python SDK | stdio server for Claude Code |
 | Backend | FastAPI + Uvicorn, Server-Sent Events | |
@@ -547,19 +624,26 @@ The golden set stays outside the repo (its path is in the config); the repo keep
 
 **Labels**, made in the app or in tools you already use:
 - focus verdicts and the best frame of each burst, via the culling UI;
-- reference edits: edit ~50 golden images in RawTherapee as you normally would, and the app parses your `.pp3` files into reference parameters.
+- reference edits: your existing RawTherapee sidecars already hold many of your edits, so the golden set can mostly use those; edit a few more in RawTherapee where a scenario is missing.
 
-**North-star metric — your effort:** the share of kept photos you touch, the average size of your overrides, and the minutes it takes to cull 100 images. Per-agent metrics are listed in §4.
+**North-star metric — your effort:**
+- the minutes it takes you to cull 100 photos;
+- the share of photos the app decided on its own, and how often you changed those decisions;
+- the share of kept photos whose edits you touch;
+- the average size of your edit overrides.
 
-**Initial performance targets** (to validate in Phase 0):
+ Per-agent metrics are listed in §4.
+
+**Performance targets** (updated with Phase 0 measurements):
 
 | Step | Target |
 |---|---|
 | Grid browsable after opening a folder | first thumbnails within seconds; 500 photos in ≤ 30 s (embedded previews) |
 | Analysis (faces, sharpness, embeddings) | ≤ 0.5 s per image, so 500 images in ≤ 5 min |
-| Preview render (2048 px) | ≤ 2 s per image |
-| Full-resolution export | ≤ 6 s per image |
-| UI: next image / 100% zoom | ≤ 50 ms / ≤ 200 ms |
+| Claude's culling pass | about 10 s per burst (Phase 0: two bursts in 19 s) |
+| Edited preview (fast profile, 4 in parallel) | about 1 s per image, all done in the background before you review (to measure) |
+| Full-resolution export | ≤ 6 s per image (Phase 0: 3.7–4.0 s, 5.7 s with noise reduction) |
+| Culling: next photo / 100% zoom | ≤ 50 ms / ≤ 150 ms (embedded JPEGs, Geeqie-style) |
 
 **Tests**
 - **Unit:** temperature/tint ↔ multipliers, crop geometry, `.pp3` compile/parse round-trip, grouping.
@@ -576,7 +660,13 @@ The golden set stays outside the repo (its path is in the config); the repo keep
 
 Estimates are in weeks of focused part-time work with AI-assisted coding. They set the order, not deadlines. Each phase ends with something you can use.
 
-### Phase 0 — Foundations and spikes (~1 week)
+### Phase 0 — Foundations and spikes · done, waiting for your review
+Pushed as branch `claude/phase-0-599a9b`:
+- the scaffold, `rie render` and `rie check`;
+- six ADRs in `docs/adr/`;
+- 88 passing tests.
+
+Still to do: the golden set and the calibration-kit shots, which need you. The original scope was:
 - Scaffolding: uv, ruff, pytest, `AGENTS.md` / `CLAUDE.md`, `PROJECT_STATUS.md`, `config.example.toml`.
 - Golden set and calibration-kit shots.
 - Spikes, each ending in a short ADR under `docs/adr/`:
@@ -592,12 +682,21 @@ Estimates are in weeks of focused part-time work with AI-assisted coding. They s
   6. **Claude Code headless:** run `claude -p` with the app's MCP server on a sample burst sheet and a sample edit, and measure the time and plan usage per item.
 - **Exit:** `rie render IMG.NEF --recipe r.json` produces a correct JPEG, and D1–D7 are confirmed or changed.
 
-### Phase 1 — Folder scan, analysis and culling UI · MVP 1 "cull faster" (~2–3 weeks)
-- Catalog and migrations; `rie open <folder>` (scan, RAW+JPEG pairing, re-linking by content hash); external-drive detection; exiftool batch; embedded previews; thumbnails.
-- Grouping; focus inspector v1; faces, eyes and smiles; suggested rejects with reasons; burst ranking v1.
-- UI: shoots, cull grid, loupe with 100% zoom, focus heatmap, burst compare with face strips (picking a frame rejects the rest), keyboard map, decisions, and "Done culling" (rejects to the system trash); ratings mirrored to RawTherapee.
+### Phase 1 — Fast, partly automatic culling · MVP 1 "cull in a fraction of the time" (~3 weeks)
+- Catalog and migrations; `rie open <folder>` (scan, RAW+JPEG pairing, re-linking by content hash); external-drive detection; exiftool batch.
+- Geeqie-fast viewing: embedded JPEGs extracted and screen-size copies cached when a folder opens; the browser prefetches neighbors.
+- Grouping; focus inspector v1; faces, eyes and smiles; burst ranking v1.
+- Existing RawTherapee sidecars: ratings and edits imported as yours.
+- Decision logging from the first folder, with the optional reason picker.
+- The three piles and the trust dial: technical failures and clearly worse duplicates automatic, everything else suggested. A first personal model, bootstrapped from your history if you agree.
+- UI:
+  - folders, the three pile tabs, the cull grid, and the loupe with 100% zoom;
+  - the focus heatmap, and burst compare with face strips (picking a frame rejects the rest);
+  - the keyboard map, and "Done culling" (rejects to the system trash);
+  - ratings mirrored to RawTherapee.
 - **Exit:**
-  - a real 300-frame shoot is culled end to end in the app;
+  - a real 300-frame shoot is culled end to end in the app, noticeably faster than in Geeqie;
+  - at least 30% of the photos are decided automatically, and you change fewer than 5% of those;
   - the focus recall target is met on the golden set;
   - originals are untouched.
 
@@ -612,7 +711,7 @@ Estimates are in weeks of focused part-time work with AI-assisted coding. They s
 ### Phase 3 — Claude passes and MCP (~2 weeks)
 - MCP server: read, previews, burst sheets, crop/zoom, suggest frames, propose edits, render. Nothing destructive.
 - Headless runner: starts `claude -p` per folder, in chunks that resume, with response caching and progress in the UI.
-- Culling pass: burst sheets → Claude's suggested frame and reason in the cull view.
+- Culling pass: burst sheets plus your taste notes → Claude's suggested frame and reason in the cull view. Claude also drafts taste-note updates from your disagreements.
 - Editing pass on everything you keep, with bounded changes and `crop_zoom`, A/B-tested against no editing pass on the golden set.
 - Interactive use from Claude Code ("ask anything").
 - **Exit:**
@@ -620,10 +719,11 @@ Estimates are in weeks of focused part-time work with AI-assisted coding. They s
   - the editing pass measurably reduces your overrides;
   - a plain-language request from Claude Code lands on a scene and is reviewed in the UI.
 
-### Phase 4 — Personalization and automation (~2 weeks, then ongoing)
-- Override logging → style memory v1/v2; burst ranking personalized from your picks, including the bursts where you disagreed with Claude.
+### Phase 4 — Keep learning (~2 weeks, then ongoing)
+- Editing taste: style memory v1/v2 from your edit overrides and your existing RawTherapee edits.
+- Culling: retrain after every folder, widen the trust dial as each kind of decision earns it, and roll back any model version that agrees with you less.
 - Performance pass (GPU batching, pool sizes), resumable jobs, packaging (systemd user service).
-- **Exit:** your override rate goes down over consecutive shoots.
+- **Exit:** over consecutive folders, the share of photos decided automatically goes up and your override rate goes down.
 
 ### Later candidates
 - Local adjustments with masks (subject and sky, e.g. SAM 2)
@@ -642,7 +742,7 @@ Estimates are in weeks of focused part-time work with AI-assisted coding. They s
 | Risk | Mitigation |
 |---|---|
 | RawTherapee parameters don't map cleanly to our measurements (especially WB temperature/green) | Calibrate with rendered neutral targets; verify on the real render (closed loop); `.pp3` round-trip tests; pin and record the RawTherapee version |
-| `rawtherapee-cli` is too slow for interactive nudges | Embedded JPEGs for culling; pre-render kept photos in the background; instant in-browser approximations; fast-export previews |
+| `rawtherapee-cli` is too slow for interactive nudges | Embedded JPEGs for culling; pre-render kept photos in the background; instant in-browser approximations; a fast preview profile |
 | Over-correction kills the mood | Warm-scene detection, partial corrections, Claude's editing pass, respect for in-camera exposure compensation, confidence routing, one-key reset |
 | Straightening + cropping cuts off heads | Face- and subject-aware crop check; reduce the correction or flag |
 | Burst suggestions favor the wrong things (e.g. smiles over real moments) | They're only suggestions, with Claude's reason shown; per-scene weights; the ranking learns from your picks |
@@ -651,6 +751,10 @@ Estimates are in weeks of focused part-time work with AI-assisted coding. They s
 | Privacy (faces, cloud) | No identity recognition; Claude sees only downscaled previews and sheets; per-folder opt-out and `--no-claude` |
 | Claude's passes hit your plan's usage limits on a big folder | One sheet per burst instead of one image per frame; local checks first; runs work in chunks that pause and resume |
 | Data loss | Originals never written to; rejects only go to the trash and are never deleted permanently; catalog backups |
+| Auto-reject throws away a photo you wanted | Only kinds of decision you switched to automatic; a one-grid skim of the auto-reject pile before Done culling; rejects only go to the trash; agreement tracked per kind |
+| The personal model drifts or overfits | Replayed on your recent folders before each update; every version kept for rollback |
+| Learning from your trash and old folders | Only with your OK; read-only and local; nothing from it goes to Claude |
+| Existing RawTherapee sidecars get damaged | The app backs up each sidecar once before it first adds to it, and never changes your keys |
 | Your photos have no backup (your choice for now) | The app never writes to originals and only moves rejects to the trash, where they can be restored; revisit backups later (§12) |
 | Drive unplugged or remounted mid-job | Drive identified by filesystem UUID; jobs pause and resume; cached previews keep culling possible |
 | NTFS doesn't enforce Unix read-only permissions | The app never opens originals for writing, and tests check that |
@@ -667,7 +771,7 @@ Estimates are in weeks of focused part-time work with AI-assisted coding. They s
 | 2 | Bursts | Sometimes | v0.2 | §4.4 |
 | 3 | Look | Natural and accurate | v0.2 | §4.6–§4.8 |
 | 4 | Render engine | RawTherapee (D1) | v0.2 | §3.2 |
-| 5 | Existing edits | None; start fresh | v0.2 | §3.3 |
+| 5 | Existing edits | Your existing RawTherapee ratings and edits are kept as your locked edits (changed in v0.4) | v0.4 | §3.3 |
 | 6 | Lenses | AF-S DX 35mm f/1.8G mostly, Tokina 100mm f/2.8 Macro sometimes; both in lensfun, neither with VR | v0.2 | §4.3, §4.9 |
 | 7 | UI | Browser tab (D3) | v0.2 | §6 |
 | 8 | Licensing | Personal use only | v0.2 | §7 |
@@ -676,11 +780,16 @@ Estimates are in weeks of focused part-time work with AI-assisted coding. They s
 | 11 | Rejects | Moved to the drive's system trash when you press Done culling | v0.2 | §4.4 |
 | 12 | What gets edited | Everything you keep after culling | v0.3 | §2, §3.4 |
 | 13 | Export | One full-size JPEG per kept photo, in `jpg/` inside the folder (replaces the four presets) | v0.3 | §6.1 |
-| 14 | Sidecars | RawTherapee `.pp3` next to each photo | v0.3 | §3.3 |
+| 14 | Sidecars | RawTherapee `.pp3` next to each photo; an existing one is backed up once before the app first adds to it | v0.3 | §3.3 |
 | 15 | Claude | Through Claude Code on your account; suggests burst frames and refines edits, both automatically; no scene tags; no spending cap for now (D6) | v0.3 | §5 |
 | 16 | Backup | None for now | v0.3 | §4.1, §11 |
+| 17 | Speed | As fast as possible: culling shows only embedded JPEGs (Geeqie-style); edited previews are pre-rendered in the background with a fast profile | v0.4 | §6, §9 |
+| 18 | Culling automation | Three piles (auto-reject, auto-keep, your call), with a per-kind trust dial that goes automatic only with your OK | v0.4 | §4.4 |
+| 19 | Learning your taste | Every decision teaches a personal model, and Claude keeps taste notes that you can edit | v0.4 | §4.11 |
 
-**Still open:** nothing blocking. Backups are deferred: when you want one, the simplest option is a second USB drive that each finished folder gets copied to.
+**Still open**
+1. **Learning from your history.** May the app bootstrap your personal model from your existing folders, your RawTherapee ratings and the NEFs in the drive's trash? It's read-only and local, and nothing goes to Claude.
+2. **Backups (deferred).** When you want one, the simplest option is a second USB drive that each finished folder gets copied to.
 
 ---
 
@@ -696,7 +805,7 @@ Estimates are in weeks of focused part-time work with AI-assisted coding. They s
 | 12/14-bit NEF, lossless compressed or compressed | — |
 | Active D-Lighting underexposes the raw | Exposure compensation logic |
 | RawTherapee 5.13 ships `NIKON D7100.dcp` | Input color profile |
-| Your lenses: AF-S DX 35mm f/1.8G and Tokina AT-X M100 100mm f/2.8 Macro, neither with VR | Shake thresholds per focal length; lensfun profiles exist for both |
+| Your lenses: AF-S DX 35mm f/1.8G and Tokina AT-X M100 100mm f/2.8 Macro, neither with VR | Shake thresholds per focal length; lensfun profiles exist for both, though the Tokina's has no vignetting data |
 
 ## Appendix B — References
 
