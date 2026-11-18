@@ -1,6 +1,6 @@
 # Architecture decision records
 
-One file per decision, numbered in order. Each says what was checked, what was found (with the numbers), what was decided, and what it changes in [the implementation plan](../../IMPLEMENTATION_PLAN.md). Phase 0's spikes produced the first six.
+One file per decision, numbered in order. Each says what was checked, what was found (with the numbers), what was decided, and what it changes in [the implementation plan](../../IMPLEMENTATION_PLAN.md). Phase 0's spikes produced the first six; Phase 1 added the rest.
 
 | ADR | Topic | Outcome |
 |---|---|---|
@@ -10,3 +10,4 @@ One file per decision, numbered in order. Each says what was checked, what was f
 | [0004](0004-python-version.md) | Python version | 3.13; the whole stack also works on 3.12 and 3.14. |
 | [0005](0005-external-drive.md) | Photo drive detection | UUID link plus mount table, never touching the mount point. |
 | [0006](0006-claude-code-headless.md) | Claude Code headless and MCP | D6 confirmed. Two bursts in 19 s, about $0.05 per burst API-equivalent. |
+| [0007](0007-safe-file-operations.md) | Safe file operations | The freedesktop.org trash implemented in `rie.fileops` instead of send2trash, with an explicit same-device check, no-replace renames, and static and audit-hook tests that only this module changes photo folders. |

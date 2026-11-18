@@ -261,3 +261,19 @@ def test_folders_on_the_drive_are_stored_relative_to_its_mount_point(tmp_path, m
     assert location == locations.Location(UUID, "Photos/shoot")
     assert locations.resolve(location, cfg) == elsewhere / "Photos" / "shoot"
     assert locations.locate(tmp_path / "other", cfg) == locations.Location("", str(tmp_path / "other"))
+
+
+@needs_exiftool
+def test_scanning_is_read_only_under_the_audit_hook(tmp_path, cfg, conn):
+    from tests import guard
+
+    shoot = tmp_path / "shoot"
+    make_jpeg(shoot / "DSC_0001.JPG")
+    make_jpeg(shoot / "DSC_0002.JPG", color=(9, 9, 9))
+    (shoot / "DSC_0001.JPG.pp3").write_text("[General]\nRank=2\n")
+    before = snapshot(shoot)
+    with guard.watch(shoot) as seen:
+        scan_folder(conn, cfg, shoot)
+    assert seen.events == []
+    assert [Path(cmd[0]).name for cmd in seen.processes] == ["exiftool"]
+    assert snapshot(shoot) == before

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from . import catalog, config, drive, locations
+from . import catalog, config, drive, locations, safety
 from .engine.rawtherapee import RenderError, RenderResult
 from .engine.recipe import RecipeError
 from .engine.recipe import load as load_recipe
@@ -41,7 +42,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _inside(path: Path, folder: Path | None) -> bool:
+    if folder is None:
+        return False
+    path, folder = Path(os.path.abspath(path)), Path(os.path.abspath(folder))
+    return path == folder or folder in path.parents
+
+
 def cmd_render(args: argparse.Namespace, cfg: config.Config) -> int:
+    if args.out is not None and _inside(args.out, cfg.paths.photos):
+        # Exports into a shoot folder go through the file operations module (Phase 2), never through -o.
+        raise RenderError(f"refusing to write a render inside the photos folder: {args.out}")
     recipe = load_recipe(args.recipe)
     size = cfg.render.preview_size if args.preview else args.size
     if size is not None and not 64 <= size <= 16384:
@@ -91,6 +102,15 @@ def cmd_check(cfg: config.Config) -> int:
     where = f" at {status.mountpoint}" if status.mountpoint else ""
     device = f" ({status.device})" if status.device else ""
     print(f"photo drive: {status.state}{where}{device}{': ' + status.detail if status.detail else ''}")
+    if status.connected and status.mountpoint is not None:
+        report = safety.space_report(status.mountpoint, cfg.safety.min_free_gb)
+        print(f"drive space: {report.describe()}")
+    findings = safety.trash_autoempty_findings()
+    if findings:
+        for finding in findings:
+            print(f"WARNING: something may empty the trash on its own: {finding}")
+    else:
+        print("trash: nothing found that empties it automatically")
     return 1 if problems else 0
 
 

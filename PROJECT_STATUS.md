@@ -12,6 +12,7 @@ The state of the code. Notes about one installation, such as its photo drive and
   - New and changed files are hashed: SHA-256 of the size and the first 64 KiB (the EXIF block, maker notes and thumbnail). A file whose hash matches a photo whose old file is gone is re-linked, keeping its rows; a whole moved or renamed folder is recognised the same way. Files that disappear are marked missing.
   - Metadata comes from one `exiftool -stay_open` process per folder, in chunks of 25: `-json -n -G1 -a` for everything, stored whole, plus a printed pass for the lens name, AF point names and shooting mode. The wrapper refuses write options and passes absolute paths only.
   - Re-opening an unchanged folder reads no file.
+- **Safe file operations** (`rie.fileops`, ADR 0007): the only code that changes a photo folder. It moves a file to its volume's freedesktop.org trash (`.Trash-<uid>` at the drive's top) after checking the trash is on the same device, records where the file went, restores it without overwriting anything, creates new files and updates `.pp3` sidecars through temporary names (a sidecar the app did not create only after a backup), and never deletes anything except a restored file's `.trashinfo`. A static test fails on any delete, rename or write outside the module that is not a reviewed cache or data-folder write, and an audit-hook test checks real runs. `rie check` shows the drive's trash size and free space and looks for anything that empties the trash automatically. `rie render -o` refuses outputs inside the photos folder.
 - **Photo drive wired in** (`rie.locations`): a folder under the drive's mount point (or the photos folder) is stored as the drive's UUID plus a relative path. Before it is read, the drive's state is checked from the device and the mount table; an unplugged drive is reported without touching its mount point.
 
 ## Built (Phase 0)
@@ -49,7 +50,6 @@ The state of the code. Notes about one installation, such as its photo drive and
 - The rest of Phase 1 (on this branch, in progress):
   - previews and analysis;
   - grouping, the three piles, the culling UI and the trash at Done culling;
-  - the safe file operations of plan §3.5;
   - the edit agents, sidecars and export;
   - the real MCP server and the Claude runner;
   - taste learning and the look lab.
