@@ -1,0 +1,46 @@
+# Everything specific to one installation: its settings, and notes about its machine, drive and samples
+config.toml
+local/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Model weights; models/manifest.toml (sources, hashes, licenses) is tracked
+models/*
+!models/manifest.toml
+
+# Photos, previews, renders and caches never belong in Git; samples live in ~/.cache/rie/samples
+cache/
+samples/
+*.nef
+*.NEF
+*.nrw
+*.dng
+*.DNG
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.png
+*.PNG
+*.tif
+*.tiff
+*.TIF
+*.webp
+*.heic
+*.HEIC
+*.mov
+*.MOV
+*.mp4
+# RawTherapee sidecars and generated profiles; tracked base profiles live in profiles/rawtherapee/
+*.pp3
+!profiles/rawtherapee/*.pp3
+!tests/data/*.pp3
+
+# Web build output (Phase 1)
+node_modules/
+web/dist/

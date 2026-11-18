@@ -1,0 +1,51 @@
+# Setup
+
+What the tool needs, how to install it, which models it uses, and where test samples go. [PROJECT_STATUS.md](../PROJECT_STATUS.md) says what is built; the ADRs in [adr/](adr/README.md) hold the Phase 0 measurements.
+
+## Requirements
+
+| Component | Use here | Tested with |
+|---|---|---|
+| Linux | Drive detection reads `/dev/disk/by-uuid` and `/proc/self/mountinfo` | Arch Linux |
+| RawTherapee (`rawtherapee-cli`) | The render engine; its bundled `NIKON D7100.dcp` is the input profile | 5.13 |
+| lensfun database | Lens corrections, looked up by RawTherapee | 0.3.4 |
+| exiftool | Metadata, embedded JPEG offsets | 13.55 |
+| libvips | Thumbnails (Phase 1), through pyvips | 8.18 |
+| uv | Creates the Python 3.13 environment from `uv.lock` | 0.13.5 |
+| Claude Code | Culling and editing passes (Phase 3), signed in with `claude auth login` | 2.1.327 |
+| NVIDIA GPU and driver (optional) | ONNX Runtime and PyTorch models; everything also runs on the CPU | GTX 1650, 4 GB |
+
+`uv run rie check` reports each of these and the photo drive's state.
+
+## Python environment
+
+`uv sync` creates `.venv` with Python 3.13 (ADR 0004) and the locked packages. Phase 0's code uses only the standard library. The dependency groups are:
+
+- `dev`: pytest, ruff, pyright;
+- `spikes` (`uv sync --group spikes`): rawpy 0.28, numpy, OpenCV 5.1 (headless), onnxruntime-gpu 1.32 with its CUDA 13 and cuDNN 9 wheels (about 3 GB), MediaPipe 0.10.35, pyvips 3.2, Pillow and the MCP SDK 2.3.
+
+Phase 1 moves the analysis packages into the main dependencies as it starts using them.
+
+- **MediaPipe** stays at 0.10.35: every 1.x release ran out of memory while creating the Face Landmarker (ADR 0003).
+- **libvips** warns that its OpenSlide module cannot load `libopenslide.so.1`. The warning is harmless; OpenSlide is only for microscopy slides.
+
+## Models
+
+`uv run python scripts/fetch_models.py` downloads the files listed in [models/manifest.toml](../models/manifest.toml) into `models/` (ignored by Git) and checks their SHA-256:
+
+| Model | File | License |
+|---|---|---|
+| YuNet face detector (OpenCV Zoo, 2023-03) | `models/yunet/face_detection_yunet_2023mar.onnx` | MIT |
+| MediaPipe Face Landmarker (float16) | `models/mediapipe/face_landmarker.task` | Apache-2.0 |
+
+## RawTherapee
+
+The app gives rawtherapee-cli its own settings folder (`RT_SETTINGS`, by default `~/.cache/rie/rawtherapee`), so changes to RawTherapee's GUI preferences never change the app's renders. Base profiles live in [profiles/rawtherapee/](../profiles/rawtherapee/): `d7100-base.pp3` is `d7100-base@1`. ADR 0001 lists every `.pp3` key the recipe compiler writes and how each was checked.
+
+## Samples for spikes and tests
+
+Spikes and the integration tests use read-only copies of NEFs in `~/.cache/rie/samples/`, never the photo drive. To make a sample set, copy 20–30 varied NEFs there and run `chmod a-w` on them. Tests marked `rawtherapee` use the first NEF there, or the file named by `RIE_SAMPLE_NEF`, and skip without one.
+
+## The photo drive
+
+Set `drive.uuid` in `config.toml` to the filesystem UUID from `/dev/disk/by-uuid` (`lsblk -f` lists it). The app decides whether the drive is connected from the device and the mount table only; with a systemd automount, merely touching the mount point of an unplugged drive would block for the device timeout (ADR 0005).

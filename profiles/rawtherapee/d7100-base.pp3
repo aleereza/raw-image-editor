@@ -1,0 +1,49 @@
+# rie base profile d7100-base@1 for RawTherapee 5.13 (profile version 353).
+# A partial profile: RawTherapee starts from neutral values and applies only these keys,
+# then the per-image profile compiled from the recipe. See docs/adr/0001-rawtherapee-cli.md.
+
+[Version]
+AppVersion=5.13
+Version=353
+
+[Exposure]
+Auto=false
+HistogramMatching=false
+
+[HLRecovery]
+Enabled=true
+Method=Coloropp
+
+[White Balance]
+Enabled=true
+Setting=Camera
+
+[LensProfile]
+LcMode=lfauto
+UseDistortion=true
+UseVignette=true
+UseCA=false
+
+[Common Properties for Transformations]
+AutoFill=true
+
+[Color Management]
+InputProfile=(cameraICC)
+ToneCurve=false
+ApplyLookTable=false
+ApplyBaselineExposureOffset=true
+ApplyHueSatMap=true
+DCPIlluminant=0
+WorkingProfile=Rec2020
+OutputProfile=RTv4_sRGB
+
+[RAW]
+CA=true
+
+[RAW Bayer]
+Method=amaze
+
+[PostDemosaicSharpening]
+Enabled=true
+AutoContrast=true
+AutoRadius=true
