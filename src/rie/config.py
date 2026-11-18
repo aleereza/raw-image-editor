@@ -27,7 +27,7 @@ class ConfigError(RuntimeError):
 class Paths:
     photos: Path | None = None  # folder that holds the shoot folders, on the photo drive
     cache: Path = Path.home() / ".cache" / "rie"  # previews, renders, analysis; safe to delete
-    data: Path = Path.home() / ".local" / "share" / "rie"  # the catalog (Phase 1)
+    data: Path = Path.home() / ".local" / "share" / "rie"  # the catalog, its backups and sidecar backups
 
 
 @dataclass(frozen=True)
@@ -52,6 +52,30 @@ class Render:
 
 
 @dataclass(frozen=True)
+class Previews:
+    thumb_size: int = 512  # long edge of grid thumbnails, made from the camera's 1620 x 1080 OtherImage
+    screen_size: int = 2048  # long edge of the loupe copies, made from the full-size JpgFromRaw
+    jpeg_quality: int = 85
+    workers: int = 6  # processes that make the cached copies when a folder opens
+
+
+@dataclass(frozen=True)
+class Analysis:
+    workers: int = 3  # analysis processes; each holds a raw decode and the face models (about 1 GB)
+
+
+@dataclass(frozen=True)
+class Safety:
+    min_free_gb: float = 100.0  # warn when the photo drive has less free space than this
+
+
+@dataclass(frozen=True)
+class Server:
+    host: str = "127.0.0.1"
+    port: int = 7317
+
+
+@dataclass(frozen=True)
 class Claude:
     enabled: bool = True  # Claude's culling and editing passes (Phase 3); `--no-claude` turns them off per run
     model: str = ""  # empty: whatever model Claude Code is set to
@@ -63,11 +87,19 @@ class Config:
     drive: Drive = field(default_factory=Drive)
     rawtherapee: RawTherapee = field(default_factory=RawTherapee)
     render: Render = field(default_factory=Render)
+    previews: Previews = field(default_factory=Previews)
+    analysis: Analysis = field(default_factory=Analysis)
+    safety: Safety = field(default_factory=Safety)
+    server: Server = field(default_factory=Server)
     claude: Claude = field(default_factory=Claude)
 
     @property
     def rawtherapee_settings_dir(self) -> Path:
         return self.rawtherapee.settings_dir or self.paths.cache / "rawtherapee"
+
+    @property
+    def catalog_path(self) -> Path:
+        return self.paths.data / "catalog.db"
 
 
 def _path(value: Any, key: str, base: Path) -> Path:
@@ -97,7 +129,17 @@ def _typed[T](table: dict[str, Any], key: str, kind: type[T], default: T, where:
 
 
 def parse(data: dict[str, Any], base: Path = REPO_ROOT) -> Config:
-    unknown = set(data) - {"paths", "drive", "rawtherapee", "render", "claude"}
+    unknown = set(data) - {
+        "paths",
+        "drive",
+        "rawtherapee",
+        "render",
+        "previews",
+        "analysis",
+        "safety",
+        "server",
+        "claude",
+    }
     if unknown:
         raise ConfigError(f"unknown table(s): {', '.join(sorted(unknown))}")
 
@@ -137,12 +179,56 @@ def parse(data: dict[str, Any], base: Path = REPO_ROOT) -> Config:
     if render.jpeg_subsampling not in (1, 2, 3):
         raise ConfigError("render.jpeg_subsampling must be 1, 2 or 3")
 
+    pv = _table(data, "previews", {"thumb_size", "screen_size", "jpeg_quality", "workers"})
+    previews = Previews(
+        thumb_size=_typed(pv, "thumb_size", int, Previews.thumb_size, "previews"),
+        screen_size=_typed(pv, "screen_size", int, Previews.screen_size, "previews"),
+        jpeg_quality=_typed(pv, "jpeg_quality", int, Previews.jpeg_quality, "previews"),
+        workers=_typed(pv, "workers", int, Previews.workers, "previews"),
+    )
+    if not 128 <= previews.thumb_size <= 1620:
+        raise ConfigError("previews.thumb_size must be 128-1620")
+    if not 512 <= previews.screen_size <= 6000:
+        raise ConfigError("previews.screen_size must be 512-6000")
+    if not 50 <= previews.jpeg_quality <= 100:
+        raise ConfigError("previews.jpeg_quality must be 50-100")
+    if not 1 <= previews.workers <= 32:
+        raise ConfigError("previews.workers must be 1-32")
+
+    an = _table(data, "analysis", {"workers"})
+    analysis = Analysis(workers=_typed(an, "workers", int, Analysis.workers, "analysis"))
+    if not 1 <= analysis.workers <= 16:
+        raise ConfigError("analysis.workers must be 1-16")
+
+    sf = _table(data, "safety", {"min_free_gb"})
+    safety = Safety(min_free_gb=_typed(sf, "min_free_gb", float, Safety.min_free_gb, "safety"))
+    if safety.min_free_gb < 0:
+        raise ConfigError("safety.min_free_gb must be 0 or more")
+
+    sv = _table(data, "server", {"host", "port"})
+    server = Server(
+        host=_typed(sv, "host", str, Server.host, "server"),
+        port=_typed(sv, "port", int, Server.port, "server"),
+    )
+    if not 1 <= server.port <= 65535:
+        raise ConfigError("server.port must be 1-65535")
+
     c = _table(data, "claude", {"enabled", "model"})
     claude = Claude(
         enabled=_typed(c, "enabled", bool, Claude.enabled, "claude"),
         model=_typed(c, "model", str, Claude.model, "claude"),
     )
-    return Config(paths=paths, drive=drive, rawtherapee=rawtherapee, render=render, claude=claude)
+    return Config(
+        paths=paths,
+        drive=drive,
+        rawtherapee=rawtherapee,
+        render=render,
+        previews=previews,
+        analysis=analysis,
+        safety=safety,
+        server=server,
+        claude=claude,
+    )
 
 
 def load(path: Path = CONFIG_PATH) -> Config:

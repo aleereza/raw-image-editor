@@ -61,3 +61,26 @@ def sample_nef() -> Path | None:
         return Path(explicit)
     found = sorted(SAMPLES.glob("*.NEF")) if SAMPLES.is_dir() else []
     return found[0] if found else None
+
+
+def make_jpeg(path: Path, *, when: str = "2026:05:01 10:00:00", subsec: str = "00", size=(64, 48), color=(120, 90, 60)):
+    """A small camera-like JPEG with a capture time, for scan tests that need exiftool to find metadata."""
+    from PIL import Image
+
+    image = Image.new("RGB", size, color)
+    exif = Image.Exif()
+    exif[0x010F] = "NIKON CORPORATION"  # Make
+    exif[0x0110] = "NIKON D7100"  # Model
+    exif[0x0112] = 1  # Orientation
+    sub = exif.get_ifd(0x8769)
+    sub[0x9003] = when  # DateTimeOriginal
+    sub[0x9291] = subsec  # SubSecTimeOriginal
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path, "JPEG", exif=exif, quality=90)
+    return path
+
+
+def sample_nefs(count: int) -> list[Path]:
+    """Up to `count` real NEFs from the samples folder (read-only copies), for integration tests."""
+    found = sorted(SAMPLES.glob("*.NEF")) if SAMPLES.is_dir() else []
+    return found[:count]

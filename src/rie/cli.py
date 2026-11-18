@@ -8,11 +8,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import config, drive
+from . import catalog, config, drive, locations
 from .engine.rawtherapee import RenderError, RenderResult
 from .engine.recipe import RecipeError
 from .engine.recipe import load as load_recipe
 from .render import RenderPlan, default_output, engine, render
+from .scan import exif
+from .scan.folder import ScanError, scan_folder
 
 DCP_DIRS = (Path("/usr/share/rawtherapee/dcpprofiles"), Path("/usr/local/share/rawtherapee/dcpprofiles"))
 
@@ -33,6 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--dry-run", action="store_true", help="print the profiles and command without rendering")
 
     commands.add_parser("check", help="check rawtherapee-cli, the D7100 profile, exiftool, Claude Code and the drive")
+
+    o = commands.add_parser("open", help="scan a shoot folder into the catalog (reads the folder, never writes it)")
+    o.add_argument("folder", type=Path, help="the shoot folder")
     return parser
 
 
@@ -89,6 +94,29 @@ def cmd_check(cfg: config.Config) -> int:
     return 1 if problems else 0
 
 
+def _progress(step: str, done: int, total: int) -> None:
+    if total:
+        print(f"  {step}: {done}/{total}", file=sys.stderr, flush=True)
+
+
+def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
+    conn = catalog.connect(cfg.catalog_path)
+    try:
+        summary = scan_folder(conn, cfg, args.folder, progress=_progress)
+        catalog.backup(conn, cfg.paths.data)
+    finally:
+        conn.close()
+    moved = f", re-linked from {summary.moved_from}" if summary.moved_from else ""
+    print(
+        f"{summary.path}: {summary.shots} photos ({summary.new} new, {summary.changed} changed, "
+        f"{summary.unchanged} unchanged, {summary.relinked} re-linked, {summary.missing} missing{moved}); "
+        f"{summary.sidecars} RawTherapee sidecars, {summary.other} other files; {summary.seconds:.1f} s"
+    )
+    for error in summary.errors[:10]:
+        print(f"  metadata: {error}", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -97,7 +125,17 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_render(args, cfg)
         if args.command == "check":
             return cmd_check(cfg)
-    except (config.ConfigError, RecipeError, RenderError) as exc:
+        if args.command == "open":
+            return cmd_open(args, cfg)
+    except (
+        config.ConfigError,
+        RecipeError,
+        RenderError,
+        ScanError,
+        exif.ExifError,
+        locations.DriveUnavailable,
+        catalog.CatalogError,
+    ) as exc:
         print(f"rie: {exc}", file=sys.stderr)
         return 2
     return 1
