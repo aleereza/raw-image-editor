@@ -18,6 +18,9 @@ dev = [
   "pytest>=9.2,<10",
   "ruff>=0.17,<0.18",
   "pyright>=1.1.414",
+  # tests/test_render_rawtherapee.py compares renders with these.
+  "numpy>=2.5,<3",
+  "pillow>=12",
 ]
 # Packages the Phase 0 spike scripts in scripts/spikes/ use: `uv sync --group spikes`.
 spikes = [

@@ -811,6 +811,8 @@ source = { editable = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "numpy" },
+    { name = "pillow" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -830,6 +832,8 @@ spikes = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "numpy", specifier = ">=2.5,<3" },
+    { name = "pillow", specifier = ">=12" },
     { name = "pyright", specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.2,<10" },
     { name = "ruff", specifier = ">=0.17,<0.18" },
