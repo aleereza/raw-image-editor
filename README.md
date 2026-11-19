@@ -4,7 +4,7 @@ An AI-assisted RAW photo workflow for a Nikon D7100 (NEF).
 
 The machine does the technical edits: white balance, exposure and tone, color, straightening, lens corrections, and focus/blur checks. You make the human calls: which moment, which smile, which frame. Claude, through Claude Code on your own account, suggests the best frame in each burst and helps refine the edits.
 
-**Status:** Phase 0 (foundations and spikes) is done; Phase 1 (folder scan, analysis and culling UI) is next. [PROJECT_STATUS.md](PROJECT_STATUS.md) says what is built.
+**Status:** Phase 0 (foundations and spikes) is done. Phase 1 (folder scan, analysis and the culling UI) is built on this branch and waits for a real shoot to be culled with it. [PROJECT_STATUS.md](PROJECT_STATUS.md) says what is built.
 
 - [Implementation plan](IMPLEMENTATION_PLAN.md): architecture, agents, safety, UI, evaluation, roadmap, and the decisions so far.
 - [Architecture decision records](docs/adr/README.md): what the Phase 0 spikes measured and decided.
@@ -18,11 +18,16 @@ open a folder → AI culling suggestions → **you decide what to keep** → eve
 
 ```bash
 uv sync
+uv run python scripts/fetch_models.py
+(cd web && npm install && npm run build)
 uv run rie check
-uv run rie render /path/to/DSC_0001.NEF --recipe examples/recipe.json --preview
+uv run rie open "/path/to/shoot folder"
+uv run rie serve --open
 ```
 
-The render goes to `~/.cache/rie/renders/` unless `-o` names another file; the raw file is only read.
+`rie open` reads the folder (it never writes there), caches the camera's embedded JPEGs, analyses focus and faces, groups bursts and sorts the photos into three piles; `rie serve` opens the culling UI at http://localhost:7317, where folders can also be opened. Press `?` there for the keyboard. Rejects are only flags until **Done culling**, which moves them to the photo drive's own trash; `rie restore FOLDER` brings them back.
+
+`uv run rie render /path/to/DSC_0001.NEF --recipe examples/recipe.json --preview` renders one raw file with RawTherapee into `~/.cache/rie/renders/`.
 
 ## Stack
 

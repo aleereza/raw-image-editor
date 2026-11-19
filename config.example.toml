@@ -7,7 +7,7 @@
 photos = "/path/to/Photos"
 # Previews, renders, analysis, and the settings folder the app gives RawTherapee; safe to delete.
 # cache = "~/.cache/rie"
-# The catalog (Phase 1).
+# The catalog, its backups, and copies of RawTherapee sidecars made before the app first adds to them.
 # data = "~/.local/share/rie"
 
 [drive]
@@ -30,6 +30,25 @@ uuid = "0123456789ABCDEF"
 # preview_size = 2048     # long edge of `rie render --preview`, in pixels
 # jpeg_quality = 95
 # jpeg_subsampling = 3    # 1 = 4:2:0, 2 = 4:2:2, 3 = 4:4:4
+
+[previews]
+# Cached copies of the camera's embedded JPEGs, made when a folder opens (plan §6, ADR 0002).
+# thumb_size = 512        # grid thumbnails, from the 1620 x 1080 OtherImage
+# screen_size = 2048      # loupe copies, from the full-size JpgFromRaw; about your screen's long edge
+# jpeg_quality = 85
+# workers = 6             # processes making them
+
+[analysis]
+# workers = 3             # analysis processes (faces, focus); each needs about 1 GB of memory
+
+[safety]
+# Warn when the photo drive has less free space than this; trashed rejects keep using space until you empty the trash.
+# min_free_gb = 100
+
+[server]
+# `rie serve` listens here; open http://localhost:7317 in a browser.
+# host = "127.0.0.1"
+# port = 7317
 
 [claude]
 # Claude's culling and editing passes (Phase 3), through Claude Code on the signed-in account.

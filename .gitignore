@@ -1,6 +1,8 @@
 # Everything specific to one installation: its settings, and notes about its machine, drive and samples
 config.toml
 local/
+# Claude Code's local launch settings (dev server paths on this machine)
+.claude/launch.json
 
 # Python
 .venv/

@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from . import config, drive
+from . import catalog, config, drive, locations, safety
+from .cull import actions
+from .cull.actions import CullError
 from .engine.rawtherapee import RenderError, RenderResult
 from .engine.recipe import RecipeError
 from .engine.recipe import load as load_recipe
+from .pipeline import open_folder
 from .render import RenderPlan, default_output, engine, render
+from .scan import exif
+from .scan.folder import ScanError
 
 DCP_DIRS = (Path("/usr/share/rawtherapee/dcpprofiles"), Path("/usr/local/share/rawtherapee/dcpprofiles"))
 
@@ -33,10 +39,34 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--dry-run", action="store_true", help="print the profiles and command without rendering")
 
     commands.add_parser("check", help="check rawtherapee-cli, the D7100 profile, exiftool, Claude Code and the drive")
+
+    o = commands.add_parser("open", help="scan a shoot folder into the catalog (reads the folder, never writes it)")
+    o.add_argument("folder", type=Path, help="the shoot folder")
+    o.add_argument("--no-analysis", action="store_true", help="only scan and make previews")
+    o.add_argument("--workers", type=int, help="analysis processes (default: analysis.workers)")
+
+    sv = commands.add_parser("serve", help="start the culling UI (http://localhost:7317 by default)")
+    sv.add_argument("--host", help="address to listen on (default: server.host)")
+    sv.add_argument("--port", type=int, help="port (default: server.port)")
+    sv.add_argument("--open", action="store_true", help="open the UI in the default browser")
+
+    rs = commands.add_parser("restore", help="move a folder's trashed rejects (or one photo) back from the trash")
+    rs.add_argument("folder", type=Path, help="the shoot folder")
+    rs.add_argument("--photo", help="only this photo, by file name")
     return parser
 
 
+def _inside(path: Path, folder: Path | None) -> bool:
+    if folder is None:
+        return False
+    path, folder = Path(os.path.abspath(path)), Path(os.path.abspath(folder))
+    return path == folder or folder in path.parents
+
+
 def cmd_render(args: argparse.Namespace, cfg: config.Config) -> int:
+    if args.out is not None and _inside(args.out, cfg.paths.photos):
+        # Exports into a shoot folder go through the file operations module (Phase 2), never through -o.
+        raise RenderError(f"refusing to write a render inside the photos folder: {args.out}")
     recipe = load_recipe(args.recipe)
     size = cfg.render.preview_size if args.preview else args.size
     if size is not None and not 64 <= size <= 16384:
@@ -86,7 +116,111 @@ def cmd_check(cfg: config.Config) -> int:
     where = f" at {status.mountpoint}" if status.mountpoint else ""
     device = f" ({status.device})" if status.device else ""
     print(f"photo drive: {status.state}{where}{device}{': ' + status.detail if status.detail else ''}")
+    if status.connected and status.mountpoint is not None:
+        report = safety.space_report(status.mountpoint, cfg.safety.min_free_gb)
+        print(f"drive space: {report.describe()}")
+    findings = safety.trash_autoempty_findings()
+    if findings:
+        for finding in findings:
+            print(f"WARNING: something may empty the trash on its own: {finding}")
+    else:
+        print("trash: nothing found that empties it automatically")
     return 1 if problems else 0
+
+
+def _progress(step: str, done: int, total: int) -> None:
+    if total:
+        print(f"  {step}: {done}/{total}", file=sys.stderr, flush=True)
+
+
+def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
+    conn = catalog.connect(cfg.catalog_path)
+    try:
+        result = open_folder(
+            conn, cfg, args.folder, progress=_progress, analyze=not args.no_analysis, workers=args.workers
+        )
+        catalog.backup(conn, cfg.paths.data)
+    finally:
+        conn.close()
+    summary = result.scan
+    moved = f", re-linked from {summary.moved_from}" if summary.moved_from else ""
+    print(
+        f"{summary.path}: {summary.shots} photos ({summary.new} new, {summary.changed} changed, "
+        f"{summary.unchanged} unchanged, {summary.relinked} re-linked, {summary.missing} missing{moved}); "
+        f"{summary.sidecars} RawTherapee sidecars, {summary.other} other files; {summary.seconds:.1f} s"
+    )
+    for error in summary.errors[:10]:
+        print(f"  metadata: {error}", file=sys.stderr)
+    pv = result.previews
+    print(f"previews: {pv.done} made, {pv.skipped} already cached, {pv.failed} failed; {pv.seconds:.1f} s")
+    for error in pv.errors[:10]:
+        print(f"  preview: {error}", file=sys.stderr)
+    sc = result.sidecars
+    if sc is not None and (sc.read or sc.written):
+        print(
+            f"RawTherapee sidecars: {sc.imported} imported ({sc.ratings} ratings, {sc.edits} with edits kept as "
+            f"locked), {sc.read - sc.imported} unchanged; {sc.written} waiting ratings written"
+        )
+        for error in sc.errors[:10]:
+            print(f"  sidecar: {error}", file=sys.stderr)
+    an = result.analysis
+    if an is not None:
+        state = " (paused: the drive is not connected)" if an.paused else ""
+        print(f"analysis: {an.done} analysed, {an.skipped} up to date, {an.failed} failed; {an.seconds:.1f} s{state}")
+        if an.note:
+            print(f"  {an.note}", file=sys.stderr)
+        for error in an.errors[:10]:
+            print(f"  analysis: {error}", file=sys.stderr)
+    if result.groups is not None:
+        g = result.groups
+        print(f"groups: {g.scenes} scenes, {g.bursts} bursts ({g.in_bursts} photos in bursts of two or more)")
+    if result.sort is not None:
+        piles = result.sort.piles
+        print(
+            f"sorted by {result.sort.model}: {piles['your_call']} your call, {piles['auto_reject']} auto-reject, "
+            f"{piles['auto_keep']} auto-keep"
+        )
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace, cfg: config.Config) -> int:
+    import uvicorn
+
+    from .api.app import WEB_DIST, create_app
+
+    host, port = args.host or cfg.server.host, args.port or cfg.server.port
+    if not (WEB_DIST / "index.html").is_file():
+        print("note: the web UI is not built; run `npm install` and `npm run build` in web/", file=sys.stderr)
+    url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}"
+    print(f"rie: serving {url}", flush=True)
+    if args.open and shutil.which("xdg-open"):
+        subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    uvicorn.run(create_app(cfg), host=host, port=port, log_level="warning")
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace, cfg: config.Config) -> int:
+    conn = catalog.connect(cfg.catalog_path)
+    try:
+        location = locations.locate(args.folder, cfg)
+        row = conn.execute(
+            "SELECT id FROM folders WHERE drive_uuid = ? AND path = ?", (location.drive_uuid, location.path)
+        ).fetchone()
+        if row is None:
+            raise CullError(f"{args.folder} is not in the catalog")
+        if args.photo:
+            image = conn.execute(
+                "SELECT id FROM images WHERE folder_id = ? AND name = ?", (row["id"], args.photo)
+            ).fetchone()
+            if image is None:
+                raise CullError(f"no photo {args.photo} in {args.folder}")
+            count = actions.restore(conn, cfg, image_id=image["id"])
+        else:
+            count = actions.restore(conn, cfg, folder_id=row["id"])
+    finally:
+        conn.close()
+    print(f"restored {count} files")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -97,7 +231,22 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_render(args, cfg)
         if args.command == "check":
             return cmd_check(cfg)
-    except (config.ConfigError, RecipeError, RenderError) as exc:
+        if args.command == "open":
+            return cmd_open(args, cfg)
+        if args.command == "restore":
+            return cmd_restore(args, cfg)
+        if args.command == "serve":
+            return cmd_serve(args, cfg)
+    except (
+        config.ConfigError,
+        RecipeError,
+        RenderError,
+        ScanError,
+        exif.ExifError,
+        locations.DriveUnavailable,
+        catalog.CatalogError,
+        CullError,
+    ) as exc:
         print(f"rie: {exc}", file=sys.stderr)
         return 2
     return 1

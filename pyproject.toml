@@ -9,9 +9,21 @@ description = "AI-assisted RAW workflow: keyboard culling, automated technical e
 readme = "README.md"
 # Phase 0 chose Python 3.13 by wheel availability: see docs/adr/0004-python-version.md.
 requires-python = ">=3.13,<3.14"
-# Phase 0 code needs only the standard library: rendering shells out to rawtherapee-cli.
-# The analysis stack joins these dependencies when Phase 1 starts using it.
-dependencies = []
+# Rendering shells out to rawtherapee-cli and metadata to exiftool. Phase 1 adds the image stack as its code uses it.
+dependencies = [
+  "numpy>=2.5,<3",
+  # Builds its cffi binding against the system libvips 8.18 (ADR 0004).
+  "pyvips>=3.2,<4",
+  "rawpy>=0.28,<0.29",
+  "opencv-python-headless>=5.1,<6",
+  # Every 1.x release (1.0.1 to 1.2.3) ran out of memory creating the Face Landmarker here; see ADR 0003.
+  "mediapipe==0.10.35",
+  # The personal culling model (plan §4.11): gradient boosting that retrains in seconds after each folder.
+  "scikit-learn>=1.7,<2",
+  # The local web UI (decision D3): `rie serve`.
+  "fastapi>=0.120",
+  "uvicorn>=0.38",
+]
 
 [dependency-groups]
 dev = [
@@ -21,6 +33,8 @@ dev = [
   # tests/test_render_rawtherapee.py compares renders with these.
   "numpy>=2.5,<3",
   "pillow>=12",
+  # FastAPI's TestClient.
+  "httpx>=0.28",
 ]
 # Packages the Phase 0 spike scripts in scripts/spikes/ use: `uv sync --group spikes`.
 spikes = [
@@ -57,6 +71,10 @@ extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency markers are meant to sit in argument defaults.
+extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.pyright]
 include = ["src", "tests"]
