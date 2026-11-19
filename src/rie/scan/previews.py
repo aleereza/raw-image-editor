@@ -13,6 +13,7 @@ data so the browser turns it upright without re-encoding 24 megapixels.
 from __future__ import annotations
 
 import os
+import secrets
 import struct
 import time
 from dataclasses import dataclass
@@ -117,7 +118,8 @@ def write_cached(path: Path, data: bytes, cache: Path) -> None:
     if Path(os.path.abspath(cache)) not in Path(os.path.abspath(path)).parents:
         raise PreviewError(f"refusing to write a preview outside the cache: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    # A name of its own per write: the preview step and a page asking for the same thumbnail can write at once.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
     tmp.write_bytes(data)
     tmp.replace(path)
 
@@ -199,7 +201,8 @@ def make_previews(
             rotate = 1  # libvips applies the JPEG's own EXIF orientation when it makes a thumbnail
 
         if thumb_file.exists():
-            thumb = pyvips.Image.new_from_file(str(thumb_file), access="sequential")
+            # Random access: libvips caches loads by file name, and a sequential image read by two threads fails.
+            thumb = pyvips.Image.new_from_file(str(thumb_file))
         else:
             assert small_source is not None
             thumb = _upright(pyvips.Image.thumbnail_buffer(small_source, cfg.previews.thumb_size), rotate)

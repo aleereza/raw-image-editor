@@ -8,6 +8,7 @@ folder again resumes it: every step skips work that is already done.
 from __future__ import annotations
 
 import queue
+import sys
 import threading
 import time
 import traceback
@@ -107,6 +108,10 @@ class JobRunner:
                     else f"{result.scan.shots} photos: {piles.get('your_call', 0)} your call, "
                     f"{piles.get('auto_reject', 0)} auto-reject, {piles.get('auto_keep', 0)} auto-keep"
                 )
+                problems = [*result.previews.errors, *(result.analysis.errors if result.analysis else [])]
+                if problems:
+                    job.message += f"; {len(problems)} photos had problems, first: {problems[0]}"
+                    print(f"rie: {job.path}: {len(problems)} problems; first: {problems[0]}", file=sys.stderr)
                 job.state = "done"
                 catalog.backup(conn, self.cfg.paths.data)
             except Exception as exc:  # report every failure to the UI

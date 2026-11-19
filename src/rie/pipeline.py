@@ -82,15 +82,20 @@ def run_previews(
 
     by_id = {row["id"]: row for row in todo}
     pending: list[previews.PreviewResult] = []
+    retry: list[sqlite3.Row] = []
     with ThreadPoolExecutor(max_workers=cfg.previews.workers) as pool:
-        futures = [pool.submit(work, row) for row in todo]
+        futures = {pool.submit(work, row): row for row in todo}
         for future in as_completed(futures):
             result = future.result()
+            if result.error:
+                retry.append(futures[future])  # once more at the end, alone
+                continue
             pending.append(result)
             if len(pending) >= 16:
                 _store_previews(conn, pending, by_id, stats)
                 pending = []
                 progress("previews", stats.done + stats.failed, len(todo))
+    pending += [work(row) for row in retry]
     _store_previews(conn, pending, by_id, stats)
     progress("previews", stats.done + stats.failed, len(todo))
     stats.seconds = time.perf_counter() - start
