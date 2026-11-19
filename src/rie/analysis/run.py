@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import multiprocessing
+import os
 import sqlite3
 import time
 import traceback
@@ -45,6 +46,19 @@ def _load_analyzer() -> faces_mod.FaceAnalyzer | None:
         except faces_mod.FaceModelsMissing as exc:
             _analyzer_error = str(exc)
     return _analyzer
+
+
+def quiet_worker(log_path: str) -> None:
+    """Send a worker process's output to a log file in the cache.
+
+    OpenCV and MediaPipe's native code print start-up chatter (EGL, XNNPACK, feedback-manager warnings) straight to
+    the terminal, which would fill the window running `rie serve`. Problems still reach the server: every photo's
+    errors come back in its result.
+    """
+    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)  # the app's own log, in its cache
+    os.dup2(fd, 1)
+    os.dup2(fd, 2)
+    os.close(fd)
 
 
 def _jpeg_sharpness_source(img: np.ndarray) -> np.ndarray:
@@ -216,7 +230,11 @@ def run_analysis(
         context = multiprocessing.get_context("spawn")
         queue = iter(todo)
         done: list[dict[str, Any]] = []
-        with ProcessPoolExecutor(max_workers=count, mp_context=context) as pool:
+        log = cfg.paths.cache / "logs" / "analysis.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with ProcessPoolExecutor(
+            max_workers=count, mp_context=context, initializer=quiet_worker, initargs=(str(log),)
+        ) as pool:
             in_flight: set[Future[dict[str, Any]]] = set()
 
             def refill() -> None:

@@ -105,3 +105,14 @@ def test_check_reports_tools_and_unconfigured_drive(fake_rt, tmp_path, capsys):
     printed = capsys.readouterr().out
     assert "rawtherapee-cli: 5.13" in printed
     assert "photo drive: unconfigured" in printed
+
+
+def test_wait_for_port_sees_a_listener_and_gives_up_on_none():
+    import socket
+
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        port = server.getsockname()[1]
+        assert cli.wait_for_port("127.0.0.1", port, timeout=2)
+    assert not cli.wait_for_port("127.0.0.1", port, timeout=0.3)

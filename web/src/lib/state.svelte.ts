@@ -27,6 +27,7 @@ export const ui = $state({
   jobs: [] as Job[],
   message: "",
   reasonFor: null as number | null,
+  offline: false, // `rie serve` cannot be reached
 });
 
 const analyses = new Map<number, Promise<Analysis>>();

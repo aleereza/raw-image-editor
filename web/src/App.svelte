@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type Photo } from "./lib/api";
+  import { api, onReachability, type Photo } from "./lib/api";
   import { startTiming, isDecoded } from "./lib/images";
   import { urls } from "./lib/api";
   import { PILES, REASONS, burstOf, loadFolder, refreshFolder, say, tilesOf, ui } from "./lib/state.svelte";
@@ -210,11 +210,15 @@
     }
   }
 
+  onReachability((ok) => (ui.offline = !ok));
+
   onMount(() => {
     api.status().then((s) => (ui.status = s)).catch(() => undefined);
     const timer = setInterval(() => api.status().then((s) => (ui.status = s)).catch(() => undefined), 15000);
     const events = new EventSource("/api/events");
     let finished = new Set<number>();
+    events.onerror = () => (ui.offline = true); // the browser keeps retrying on its own
+    events.onopen = () => (ui.offline = false);
     events.onmessage = (message) => {
       const data = JSON.parse(message.data);
       ui.jobs = data.jobs;
@@ -301,6 +305,13 @@
     <button onclick={() => (ui.help = !ui.help)} title="Keyboard (?)">?</button>
   </header>
 
+  {#if ui.offline}
+    <div class="offline">
+      Can't reach <code>rie serve</code>. Start it again in a terminal with <code>uv run rie serve</code> and keep it
+      running; this page reconnects by itself.
+    </div>
+  {/if}
+
   <main>
     {#if ui.view === "folders"}
       <Folders />
@@ -347,7 +358,9 @@
 </div>
 
 <style>
-  .app { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+  .app { display: flex; flex-direction: column; height: 100%; }
+  .offline { background: var(--reject); color: #1d0505; padding: 6px 12px; font-weight: 600; }
+  .offline code { background: #0002; padding: 0 4px; border-radius: 3px; }
   header {
     display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line);
     background: var(--panel); min-height: 42px;
@@ -361,7 +374,7 @@
   .job { color: var(--warn); font-size: 12px; }
   .drive { font-size: 12px; color: var(--muted); }
   .drive.bad { color: var(--reject); }
-  main { position: relative; overflow: hidden; min-height: 0; }
+  main { position: relative; overflow: hidden; min-height: 0; flex: 1 1 auto; }
   footer {
     display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-top: 1px solid var(--line);
     background: var(--panel); font-size: 13px; min-height: 32px; white-space: nowrap; overflow: hidden;

@@ -46,6 +46,7 @@ ALLOWED: dict[tuple[str, str, str], str] = {
     ("engine/rawtherapee.py", "RawTherapee.render", ".unlink"): "a failed render's partial file next to its output",
     ("scan/previews.py", "write_cached", ".write_bytes"): "cached previews, checked to be under <cache>",
     ("cull/model.py", "train", "open"): "saves a new culling model version under <data>/models",
+    ("analysis/run.py", "quiet_worker", "os.open"): "appends analysis workers' native log lines to <cache>/logs",
     ("scan/previews.py", "write_cached", ".replace"): "renames a cached preview into place under <cache>",
     ("engine/rawtherapee.py", "RawTherapee.render", ".replace"): "renames a finished render into place; `rie render`"
     " refuses outputs inside the photos folder",

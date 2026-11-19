@@ -21,11 +21,10 @@ uv sync
 uv run python scripts/fetch_models.py
 (cd web && npm install && npm run build)
 uv run rie check
-uv run rie open "/path/to/shoot folder"
 uv run rie serve --open
 ```
 
-`rie open` reads the folder (it never writes there), caches the camera's embedded JPEGs, analyses focus and faces, groups bursts and sorts the photos into three piles; `rie serve` opens the culling UI at http://localhost:7317, where folders can also be opened. Press `?` there for the keyboard. Rejects are only flags until **Done culling**, which moves them to the photo drive's own trash; `rie restore FOLDER` brings them back.
+`rie serve` opens the culling UI at http://localhost:7317: pick a shoot folder from the list and press Open. Keep the command running while you cull; `Ctrl+C` stops it. Opening a folder (there or with `rie open`) reads it without writing anything, caches the camera's embedded JPEGs, analyses focus and faces, groups bursts and sorts the photos into three piles. Press `?` in the UI for the keyboard. Rejects are only flags until **Done culling**, which moves them to the photo drive's own trash; `rie restore FOLDER` brings them back.
 
 `uv run rie render /path/to/DSC_0001.NEF --recipe examples/recipe.json --preview` renders one raw file with RawTherapee into `~/.cache/rie/renders/`.
 

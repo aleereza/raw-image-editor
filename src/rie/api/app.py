@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
 import threading
 import time
@@ -172,12 +173,53 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
     def open_folder(request: OpenRequest) -> dict[str, Any]:
         if runner is None:
             raise HTTPException(503, "jobs are not running")
-        path = Path(request.path).expanduser()
+        if not request.path.strip():
+            raise HTTPException(400, "choose a folder: click one in the list or type its path")
+        path = Path(request.path.strip()).expanduser()
         try:
-            locations.locate(path, cfg)
+            folder = locations.resolve(locations.locate(path, cfg), cfg)
         except locations.DriveUnavailable as exc:
             raise HTTPException(503, str(exc)) from exc
+        if not folder.is_dir():
+            raise HTTPException(404, f"not a folder: {folder}")
         return runner.submit_open(path).to_json()
+
+    @app.get("/api/browse")
+    def browse(path: str | None = None, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
+        """The subfolders of a folder (by default the photos folder), newest name first, to pick one to open."""
+        start = Path(path).expanduser() if path else (cfg.paths.photos or Path.home())
+        try:
+            location = locations.locate(start, cfg)
+            folder = locations.resolve(location, cfg)
+        except locations.DriveUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        if not folder.is_dir():
+            raise HTTPException(404, f"not a folder: {folder}")
+        opened = {
+            (r["drive_uuid"], r["path"]): r["id"] for r in conn.execute("SELECT id, drive_uuid, path FROM folders")
+        }
+        entries = []
+        try:
+            with os.scandir(folder) as listing:
+                for entry in listing:
+                    if entry.name.startswith(".") or not entry.is_dir(follow_symlinks=False):
+                        continue
+                    child = locations.Location(
+                        location.drive_uuid,
+                        os.path.join(location.path, entry.name) if location.on_drive else str(folder / entry.name),
+                    )
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "path": str(folder / entry.name),
+                            "folder_id": opened.get((child.drive_uuid, os.path.normpath(child.path))),
+                        }
+                    )
+        except PermissionError as exc:
+            raise HTTPException(403, f"cannot list {folder}") from exc
+        entries.sort(key=lambda e: e["name"].lower(), reverse=True)
+        parent = folder.parent if folder.parent != folder else None
+        return {"path": str(folder), "parent": str(parent) if parent else None, "folders": entries}
 
     @app.get("/api/folders/{folder_id}")
     def folder(folder_id: int, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
@@ -536,7 +578,9 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
         async def stream() -> AsyncIterator[str]:
             seen = -1
             last = time.time()
-            while not await request.is_disconnected():
+            server = getattr(request.app.state, "server", None)
+            # Ends when the page goes away or the server is stopping, so Ctrl+C does not wait on open pages.
+            while not await request.is_disconnected() and not (server is not None and server.should_exit):
                 if runner is not None:
                     version, jobs = runner.snapshot()
                     if version != seen:

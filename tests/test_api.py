@@ -125,3 +125,38 @@ def test_opening_a_folder_runs_as_a_job(tmp_path):
     assert folders and folders[0]["analyzed_at"]
     photos = client.get(f"/api/folders/{folders[0]['id']}/photos").json()
     assert [p["name"] for p in photos] == ["IMG_0001.JPG"] and photos[0]["pile"] is not None
+
+
+def test_browse_lists_subfolders_newest_name_first(tmp_path, monkeypatch):
+    photos = tmp_path / "Photos"
+    for name in ("20260101 - (raw) - a", "20261116 - (raw) - b", ".hidden"):
+        (photos / name).mkdir(parents=True)
+    (photos / "notes.txt").write_text("not a folder")
+    cfg = config.parse(
+        {"paths": {"data": str(tmp_path / "data"), "cache": str(tmp_path / "cache"), "photos": str(photos)}}
+    )
+    conn = catalog.connect(cfg.catalog_path)
+    conn.execute(
+        "INSERT INTO folders (path, name, opened_at) VALUES (?, 'b', 'now')", (str(photos / "20261116 - (raw) - b"),)
+    )
+    client = TestClient(create_app(cfg))
+    listing = client.get("/api/browse").json()
+    assert listing["path"] == str(photos) and listing["parent"] == str(tmp_path)
+    assert [(f["name"], f["folder_id"] is not None) for f in listing["folders"]] == [
+        ("20261116 - (raw) - b", True),
+        ("20260101 - (raw) - a", False),
+    ]
+    assert client.get("/api/browse", params={"path": str(photos / "missing")}).status_code == 404
+    # Opening checks the folder first instead of failing later in the background.
+    assert client.post("/api/folders/open", json={"path": "  "}).status_code == 400
+    assert client.post("/api/folders/open", json={"path": str(photos / "missing")}).status_code == 404
+    assert client.post("/api/folders/open", json={"path": str(photos / "notes.txt")}).status_code == 404
+
+    from rie import drive, locations
+
+    def unplugged(_path, _cfg):
+        raise locations.DriveUnavailable(drive.DriveStatus(drive.DriveState.UNPLUGGED, "ABCD"))
+
+    monkeypatch.setattr(locations, "locate", unplugged)
+    response = client.get("/api/browse")
+    assert response.status_code == 503 and "unplugged" in response.json()["detail"]
