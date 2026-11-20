@@ -169,11 +169,19 @@ export const api = {
   reason: (id: number, reason: string) => request<{ ok: boolean }>("POST", `/api/photos/${id}/reason`, { reason }),
   pick: (id: number, keepOthers: boolean) =>
     request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/pick`, { keep_others: keepOthers }),
+  decideBurst: (id: number, decision: "reject" | null) =>
+    request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/burst-decision`, { decision }),
   donePreview: (id: number) =>
-    request<{ rejects: number; bytes: number; size: string; keeps: number; undecided: number; auto: number; files: number }>(
-      "GET",
-      `/api/folders/${id}/done`,
-    ),
+    request<{
+      rejects: number;
+      bytes: number;
+      size: string;
+      keeps: number;
+      undecided: number;
+      auto: number;
+      files: number;
+      open_bursts: number;
+    }>("GET", `/api/folders/${id}/done`),
   done: (id: number) =>
     request<{ trashed: number; files: number; size: string; kept: number; errors: string[]; model: { promoted: boolean; note: string } | null }>(
       "POST",

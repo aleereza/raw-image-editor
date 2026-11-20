@@ -1,11 +1,21 @@
 <script lang="ts">
   import { urls, type Analysis, type Face, type Photo } from "../lib/api";
-  import { analysisFor, burstOf, ui } from "../lib/state.svelte";
+  import { analysisFor, burstOf, markOf, markText, ui } from "../lib/state.svelte";
+  import Mark from "./Mark.svelte";
 
   let { photo, onselect, onpick }: { photo: Photo; onselect: (id: number) => void; onpick: (p: Photo, keepOthers: boolean) => void } = $props();
 
   const frames = $derived(burstOf(photo, ui.photos));
   let analyses = $state<Record<number, Analysis>>({});
+
+  // A double-click picks a frame only when both clicks land in compare: double-clicking a burst in the grid opens
+  // compare on the first click, and its second click must not pick or select the frame that happens to be there.
+  let armed: number | null = null;
+  function click(event: MouseEvent, frame: Photo) {
+    if (event.detail > 1 && armed !== frame.id) return;
+    armed = frame.id;
+    onselect(frame.id);
+  }
 
   $effect(() => {
     for (const frame of frames) {
@@ -35,12 +45,22 @@
 <div class="compare" style:--cols={columns}>
   <div class="frames">
     {#each frames as frame (frame.id)}
-      <button class="frame" class:active={frame.id === photo.id} class:reject={frame.decision === "reject"} onclick={() => onselect(frame.id)} ondblclick={() => onpick(frame, false)}>
-        <img src={urls.screen(frame)} alt={frame.name} />
+      {@const mark = markOf(frame)}
+      <button
+        class="frame"
+        class:active={frame.id === photo.id}
+        class:rejected={mark.verdict === "reject"}
+        onclick={(event) => click(event, frame)}
+        ondblclick={() => armed === frame.id && onpick(frame, false)}
+      >
+        <div class="shot">
+          <img src={urls.screen(frame)} alt={frame.name} />
+          <span class="corner"><Mark {mark} size={20} /></span>
+        </div>
         <div class="label">
           <b>#{frame.burst.position}</b>
+          <span class="said">{markText(mark)}</span>
           {#if frame.burst.rank === 1}<span class="badge" title="the app's pick">★ best</span>{/if}
-          {#if frame.decision}<span class="badge {frame.decision}">{frame.decision}</span>{/if}
           {#if frame.focus.verdict}<span class="badge">{frame.focus.verdict}</span>{/if}
           {#if frame.closed}<span class="badge warn">{frame.closed} blinking</span>{/if}
         </div>
@@ -72,7 +92,10 @@
       {/each}
     </div>
   {/if}
-  <p class="hint muted"><kbd>←</kbd><kbd>→</kbd> choose · <kbd>P</kbd> pick (rejects the others) · <kbd>Shift</kbd>+<kbd>P</kbd> keep this one too · <kbd>X</kbd> reject · <kbd>C</kbd> back</p>
+  <p class="hint muted">
+    <kbd>←</kbd><kbd>→</kbd> frame · <kbd>↑</kbd><kbd>↓</kbd> burst · <kbd>N</kbd> next burst to decide · <kbd>P</kbd> pick: keep it and reject the
+    others · <kbd>Shift</kbd>+<kbd>P</kbd> keep this one too · <kbd>X</kbd> reject · <kbd>U</kbd> clear · <kbd>Esc</kbd> back
+  </p>
 </div>
 
 <style>
@@ -81,9 +104,12 @@
   .strip { grid-template-columns: 80px repeat(var(--cols), minmax(0, 1fr)); margin-top: 8px; }
   .frame { padding: 0; background: #000; border: 2px solid transparent; border-radius: 6px; overflow: hidden; text-align: left; }
   .frame.active, .cell.active { border-color: var(--accent); }
-  .frame.reject img { opacity: 0.5; }
+  .frame.rejected img { opacity: 0.45; }
+  .shot { position: relative; }
   .frame img { width: 100%; aspect-ratio: 3 / 2; object-fit: contain; display: block; background: #000; }
-  .label { display: flex; gap: 4px; align-items: center; padding: 4px 6px; }
+  .corner { position: absolute; top: 6px; left: 6px; display: flex; pointer-events: none; }
+  .label { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 4px 6px; }
+  .said { color: var(--muted); font-size: 12px; margin-right: 2px; }
   .issues { padding: 0 6px 6px; font-size: 12px; }
   .who { align-self: center; font-size: 12px; }
   .cell { position: relative; border: 2px solid transparent; border-radius: 6px; background: #000; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: hidden; }

@@ -1,10 +1,11 @@
-"""The owner's culling actions: decisions, burst picks, Done culling, restore, and what they teach.
+"""The owner's culling actions: decisions, burst picks and whole-burst decisions, Done culling, restore, and what
+they teach.
 
 Every action is written to `decision_log` with the pile and suggestion the photo had at that moment. Until Done
 culling, a reject is only a flag. Done culling then moves each rejected photo's files (the raw, its paired camera
 JPEG and their RawTherapee sidecars) to the drive's trash through `rie.fileops`, records where each file went,
-writes one `cull_outcomes` row per photo (the training data), and retrains the personal model. Photos still
-undecided in the your-call pile are kept.
+writes one `cull_outcomes` row per photo (the training data), and retrains the personal model. Open photos (no
+decision by the owner, and no automatic pile) are kept.
 """
 
 from __future__ import annotations
@@ -63,13 +64,18 @@ def set_decision(conn: sqlite3.Connection, image_id: int, decision: str | None, 
         raise CullError(f"unknown reason {reason!r}; one of {', '.join(REASONS)}")
     image = _photo(conn, image_id)
     with catalog.transaction(conn):
-        conn.execute(
-            "INSERT INTO decisions (image_id, decision, decided_by, reason, updated_at) VALUES (?, ?, 'owner', ?, ?) "
-            "ON CONFLICT (image_id) DO UPDATE SET decision = excluded.decision, decided_by = 'owner', "
-            "reason = COALESCE(excluded.reason, decisions.reason), updated_at = excluded.updated_at",
-            (image_id, decision, reason, catalog.now()),
-        )
+        _store(conn, image_id, decision, catalog.now(), reason)
         _log(conn, image, decision or "unflag", decision, reason)
+
+
+def _store(conn: sqlite3.Connection, image_id: int, decision: str | None, now: str, reason: str | None = None) -> None:
+    """Record the owner's decision on one photo; an earlier quick reason stays unless a new one is given."""
+    conn.execute(
+        "INSERT INTO decisions (image_id, decision, decided_by, reason, updated_at) VALUES (?, ?, 'owner', ?, ?) "
+        "ON CONFLICT (image_id) DO UPDATE SET decision = excluded.decision, decided_by = 'owner', "
+        "reason = COALESCE(excluded.reason, decisions.reason), updated_at = excluded.updated_at",
+        (image_id, decision, reason, now),
+    )
 
 
 def set_reason(conn: sqlite3.Connection, image_id: int, reason: str) -> None:
@@ -82,40 +88,84 @@ def set_reason(conn: sqlite3.Connection, image_id: int, reason: str) -> None:
         _log(conn, image, "reason", reason, reason)
 
 
-def pick(conn: sqlite3.Connection, image_id: int, *, keep_others: bool = False) -> list[int]:
-    """Pick a frame of its burst: it is kept and, unless `keep_others`, the burst's other frames are rejected.
-
-    With `keep_others` (Shift in the UI) only the picked frame changes, so several frames can be kept.
-    Returns the ids of the photos whose decision changed.
-    """
-    image = _photo(conn, image_id)
+def _burst_frames(conn: sqlite3.Connection, image_id: int) -> list[sqlite3.Row]:
+    """The present frames of the photo's burst in shooting order, or the photo alone when it is not in a burst,
+    each with the owner's decision and the app's pile."""
+    columns = "SELECT i.id AS image_id, d.decision, d.decided_by, s.pile FROM "
+    joins = "LEFT JOIN decisions d ON d.image_id = i.id LEFT JOIN suggestions s ON s.image_id = i.id "
     burst = conn.execute(
         "SELECT g.id FROM groups g JOIN group_members m ON m.group_id = g.id WHERE g.kind = 'burst' AND m.image_id = ?",
         (image_id,),
     ).fetchone()
+    if burst is None:
+        return conn.execute(
+            columns + "images i " + joins + "WHERE i.id = ? AND i.state = 'present'", (image_id,)
+        ).fetchall()
+    return conn.execute(
+        columns
+        + "group_members m JOIN images i ON i.id = m.image_id "
+        + joins
+        + "WHERE m.group_id = ? AND i.state = 'present' ORDER BY m.position, i.id",
+        (burst["id"],),
+    ).fetchall()
+
+
+def _owner(frame: sqlite3.Row) -> str | None:
+    """The owner's decision on a frame, if any."""
+    return frame["decision"] if frame["decided_by"] == "owner" else None
+
+
+def _rejected_by_app(frame: sqlite3.Row) -> bool:
+    """The app rejects this frame on its own: the owner hasn't decided it, and it is in the automatic reject pile."""
+    return _owner(frame) is None and frame["pile"] == "auto_reject"
+
+
+def pick(conn: sqlite3.Connection, image_id: int, *, keep_others: bool = False) -> list[int]:
+    """Pick a frame of its burst: it is kept and, unless `keep_others`, the burst's other frames are rejected.
+
+    The other frames become the owner's rejects, including a frame the owner kept before, so picking another frame
+    moves the keep (ADR 0011). A frame the app already rejects on its own keeps the app's call: its final call is a
+    reject anyway, and the share decided automatically stays right. With `keep_others` (Shift in the UI) only the
+    picked frame changes, so several frames can be kept. Returns the picked frame's id, then the ids of the other
+    frames whose decision changed.
+    """
+    image = _photo(conn, image_id)
     others = []
-    if burst is not None and not keep_others:
+    if not keep_others:
         others = [
-            r["image_id"]
-            for r in conn.execute(
-                "SELECT m.image_id FROM group_members m JOIN images i ON i.id = m.image_id "
-                "LEFT JOIN decisions d ON d.image_id = m.image_id "
-                "WHERE m.group_id = ? AND m.image_id != ? AND i.state = 'present' "
-                "AND (d.decision IS NULL OR d.decision != 'keep' OR d.decided_by != 'owner')",
-                (burst["id"], image_id),
-            )
+            f["image_id"]
+            for f in _burst_frames(conn, image_id)
+            if f["image_id"] != image_id and _owner(f) != "reject" and not _rejected_by_app(f)
         ]
     now = catalog.now()
     with catalog.transaction(conn):
-        for target, decision in [(image_id, "keep"), *[(o, "reject") for o in others]]:
-            conn.execute(
-                "INSERT INTO decisions (image_id, decision, decided_by, updated_at) VALUES (?, ?, 'owner', ?) "
-                "ON CONFLICT (image_id) DO UPDATE SET decision = excluded.decision, decided_by = 'owner', "
-                "updated_at = excluded.updated_at",
-                (target, decision, now),
-            )
+        _store(conn, image_id, "keep", now)
+        for other in others:
+            _store(conn, other, "reject", now)
         _log(conn, image, "pick", "keep_others" if keep_others else "reject_others", None)
     return [image_id, *others]
+
+
+def decide_burst(conn: sqlite3.Connection, image_id: int, decision: str | None) -> list[int]:
+    """Reject every present frame of the photo's burst, or clear the owner's decision on each of them (ADR 0011).
+
+    As with a pick, a frame the app already rejects on its own keeps the app's call. A photo that is not in a burst
+    is treated as a burst of one. Each frame that changes is logged on its own (action "burst"); returns their ids.
+    """
+    if decision not in ("reject", None):
+        raise CullError(f"a whole burst can only be rejected or cleared, not {decision!r}")
+    _photo(conn, image_id)
+    frames = _burst_frames(conn, image_id)
+    if decision == "reject":
+        changed = [f["image_id"] for f in frames if _owner(f) != "reject" and not _rejected_by_app(f)]
+    else:
+        changed = [f["image_id"] for f in frames if _owner(f) is not None]
+    now = catalog.now()
+    with catalog.transaction(conn):
+        for frame in changed:
+            _store(conn, frame, decision, now)
+            _log(conn, _photo(conn, frame), "burst", decision or "unflag", None)
+    return changed
 
 
 # --- Done culling --------------------------------------------------------------------------------------------------
@@ -186,13 +236,29 @@ class DonePreview:
     rejects: int
     bytes: int
     keeps: int
-    undecided: int  # your-call photos without a decision; they are kept
+    undecided: int  # open photos: no decision by the owner and no automatic pile; they are kept
     auto: int  # photos decided by an automatic pile without a change by the owner
     files: int
+    open_bursts: int  # bursts with open frames and no keep yet; their open frames are kept
+
+
+def _open_bursts(calls: list[FinalCall]) -> int:
+    """Bursts of two or more present frames where some frame is open and none is kept by the owner or the app."""
+    bursts: dict[int, list[FinalCall]] = {}
+    for call in calls:
+        if call.burst_id is not None:
+            bursts.setdefault(call.burst_id, []).append(call)
+    return sum(
+        len(frames) > 1
+        and any(c.decided_by == "default" for c in frames)
+        and not any(c.final == "keep" and c.decided_by != "default" for c in frames)
+        for frames in bursts.values()
+    )
 
 
 def done_preview(conn: sqlite3.Connection, cfg: Config, folder_id: int) -> DonePreview:
-    """What Done culling would do: how many rejects, how much space they take, how many undecided photos stay."""
+    """What Done culling would do: how many rejects and how much space they take, and how many open photos and
+    bursts without a keep stay."""
     calls = final_calls(conn, folder_id)
     folder = _folder_path(conn, cfg, folder_id)
     size = files = 0
@@ -209,6 +275,7 @@ def done_preview(conn: sqlite3.Connection, cfg: Config, folder_id: int) -> DoneP
         undecided=sum(c.decided_by == "default" for c in calls),
         auto=sum(c.decided_by == "accepted" for c in calls),
         files=files,
+        open_bursts=_open_bursts(calls),
     )
 
 
@@ -308,7 +375,7 @@ def done_culling(conn: sqlite3.Connection, cfg: Config, folder_id: int, *, train
                     call.model,
                     call.features,
                     call.burst_id,
-                    int(call.image_id in picked),
+                    int(call.image_id in picked and call.final == "keep"),  # a later pick may have moved the keep
                     now,
                 ),
             )

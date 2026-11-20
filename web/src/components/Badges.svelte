@@ -1,13 +1,13 @@
 <script lang="ts">
   import type { Photo } from "../lib/api";
 
+  // The analysis badges at the bottom of a tile; the photo's mark (top left) says what happens to it.
   let { photo }: { photo: Photo } = $props();
   const verdict = $derived(photo.focus.verdict);
   const focusClass = $derived(verdict === "sharp" ? "keep" : verdict && verdict !== "unknown" ? "reject" : "");
 </script>
 
 <div class="badges">
-  {#if photo.decision}<span class="badge {photo.decision}">{photo.decision === "keep" ? "✓" : "✗"}</span>{/if}
   {#if verdict && verdict !== "unknown"}<span class="badge {focusClass}" title={photo.focus.reason}>{verdict}</span>{/if}
   {#if photo.closed}<span class="badge warn" title="eyes closed">eyes {photo.closed}</span>{/if}
   {#if photo.clip !== null && photo.clip > 0.03}<span class="badge warn" title="clipped highlights">clip</span>{/if}

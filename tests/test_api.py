@@ -101,6 +101,20 @@ def test_decisions_done_and_restore(env):
     assert client.post("/api/folders/1/restore").status_code == 409
 
 
+def test_picks_and_whole_burst_decisions(env):
+    _cfg, _conn, client, _shoot, _top = env
+    assert client.post("/api/photos/2/pick", json={}).json() == {"ok": True, "changed": [2]}
+    response = client.post("/api/photos/2/burst-decision", json={"decision": "reject"})
+    assert response.json() == {"ok": True, "changed": [2]}  # a single photo is a burst of one
+    assert client.post("/api/photos/1/burst-decision", json={"decision": "reject"}).json()["changed"] == []
+    assert client.post("/api/photos/2/burst-decision", json={"decision": None}).json()["changed"] == [2]
+    assert client.post("/api/photos/2/burst-decision", json={"decision": "keep"}).status_code == 409
+    assert client.post("/api/photos/99/burst-decision", json={"decision": "reject"}).status_code == 409
+    photos = {p["id"]: p["decision"] for p in client.get("/api/folders/1/photos").json()}
+    assert photos == {1: None, 2: None}
+    assert client.get("/api/folders/1/done").json()["open_bursts"] == 0
+
+
 def test_trust_dial_resorts_open_folders(env):
     _cfg, _conn, client, _shoot, _top = env
     assert client.post("/api/trust", json={"kind": "technical", "mode": "suggest"}).status_code == 200
