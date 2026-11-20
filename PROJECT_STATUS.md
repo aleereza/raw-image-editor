@@ -10,7 +10,7 @@ Phase 1 ("fast, partly automatic culling", plan §10) is built on the branch `cl
 
 ### Commands
 
-- `rie open FOLDER [--no-analysis] [--workers N]` scans a shoot folder, caches previews, imports RawTherapee sidecars, analyses the photos, groups them and sorts them into the three piles. It only reads the folder.
+- `rie open FOLDER [--no-analysis] [--workers N]` scans a shoot folder, caches previews, imports RawTherapee sidecars, analyses the photos, groups them and sorts them into the three piles that decide what the app does on its own. It only reads the folder.
 - `rie serve [--open]` starts the culling UI at http://localhost:7317; folders can be opened from there too.
 - `rie restore FOLDER [--photo NAME]` moves a folder's trashed rejects, or one photo's files, back from the trash.
 - `rie check` also shows the drive's trash size and free space, and anything that empties the trash automatically.
@@ -45,27 +45,30 @@ Run in `analysis.workers` processes (3 by default), each photo read once:
 
 - The rule-based sort (`rules@2`) gives every photo a suggestion, a kind and a reason. Rejects are technical failures (an almost black or blown frame, a clearly soft, shaken or blurred subject, a clearly missed focus), near-duplicates of a better frame, closed eyes where a sibling has them open, other non-best frames of a burst (expression and moment), and a face cut by the frame edge (composition). Keeps are the best of a burst and good single shots. Ratings, the app's own or RawTherapee's, play no part (ADR 0010).
 - The three piles follow the trust dial. A photo goes to auto-reject or auto-keep only when its kind is automatic and the probability of a reject is at least 0.8 or at most 0.2. Technical failures and duplicates start automatic; everything else starts on suggest. A kind is proposed for automatic once it matched the owner's final call 95 % of the time over the last three folders (20 photos or more); only the owner switches it.
-- Decisions, burst picks (picking a frame rejects the others; Shift keeps more) and the optional quick reasons go to `decision_log` with the pile and suggestion the photo had at that moment.
-- Done culling first shows how many rejects there are and how much space they take. It then moves each reject's raw, paired JPEG and sidecars to the drive's trash through `rie.fileops`, records where every file went, keeps undecided photos, writes one outcome per photo, backs up the catalog and retrains the personal model. The UI and `rie restore` bring files back.
+- Decisions, burst picks (picking a frame rejects the others, including an earlier keep, so it moves the keep; Shift keeps more), whole-burst rejects and clears, and the optional quick reasons go to `decision_log` with the pile and suggestion the photo had at that moment. A pick or a whole-burst reject leaves a frame the app rejects on its own as the app's call (ADR 0011).
+- Done culling first shows how many rejects there are and how much space they take, and how many photos and bursts are still open (they are kept). It then moves each reject's raw, paired JPEG and sidecars to the drive's trash through `rie.fileops`, records where every file went, keeps undecided photos, writes one outcome per photo, backs up the catalog and retrains the personal model. The UI and `rie restore` bring files back.
 - The personal model is scikit-learn's histogram gradient boosting on 32 features. It trains after Done culling once 60 photos (10 keeps and 10 rejects) are culled, and is cross-validated by burst. It becomes active only if it agrees with the owner on the latest folder at least as well as the app's suggestions and the previous version; every version is kept for rollback. A version trained before ADR 0010, which also used the rating, is set aside until the next Done culling trains a new one, and can't be rolled back to.
 - Per folder, the app reports the share decided automatically, how often the owner changed the app's sort, the minutes spent, and agreement per kind.
 
 ### Culling UI (`rie serve`, `src/rie/api/`, `web/`)
 
-FastAPI serves the API and a Svelte 5 app (built once with `npm run build` in `web/`). The top bar names the app, Raw Image Editor, which leads back to the folders, and then the page: Folders or Culling.
+FastAPI serves the API and a Svelte 5 app (built once with `npm run build` in `web/`). The top bar names the app, Raw Image Editor, which leads back to the folders, and then the page: Folders or Culling. ADR 0011 describes the culling view.
 
 - **Folders:** the subfolders of the photos folder (newest name first), each opened with one click, with a path field for anything else; opening runs as a background job with progress. Also the folders opened before, the photo drive's state, the trash's size and free space, warnings about anything that empties the trash, and a button that restores a folder's rejects.
 - **The server:** `rie serve --open` opens the browser once the server answers. `Ctrl+C` stops it within a second even while a page is open, and the page then shows a banner until the server is back. The analysis workers' native log lines (OpenCV, MediaPipe) go to `<cache>/logs/analysis.log`, not the terminal.
 - **Cull:**
-  - the three pile tabs with counts;
-  - a grid grouped by scene, with bursts collapsed to their best frame and a count; a pile opens on the frame its first tile shows, and a stack shows whichever of its frames is selected;
+  - every photo in one grid, grouped by scene, with scene headers that count what's still to decide; a folder opens on the first photo or burst still to decide;
+  - three filter chips with counts instead of pile tabs: To decide, Rejected by the app (the Auto-reject pile) and Kept by the app (the Auto-keep pile); `Tab` cycles them and `Esc` turns them off;
+  - a mark on every photo for what Done culling will do with it: filled ✓ or ✗ for the owner's decision, outlined for the app's own call, an empty ring while it is open; rejected photos are dimmed;
+  - each burst as one tile with all of its frames: stacked edges, a dot per frame with its mark and the counts ("1 keep · 2 reject"), showing its kept frame, else the app's best, or whichever frame is selected; a click opens burst compare, and on the tile `P` picks the frame shown, `X` rejects every frame and `U` clears every frame;
   - a loupe that shows the cached 2048 px copy and prefetches and decodes the five photos on either side;
   - `Z` for 100% on the eyes or AF point (the full-size JPEG is prefetched after 0.3 s on a photo), moved by dragging or scrolling (a mouse wheel or two fingers on a touchpad) and never past the image's edges, and `F` for the focus heatmap with faces, eyes and the AF point;
-  - an action panel on the right with a button for every key: Keep and Reject (in burst compare: pick this frame, or keep it too), clearing a decision, burst compare and the app's pick, the loupe, the focus map, zoom and moving around; it can be hidden, and the browser remembers that;
-  - badges for decision, focus verdict, closed eyes, clipping and the burst's best, with the app's suggestion and reason under each photo;
+  - `↑` and `↓` follow the rows on screen across scene breaks, `PgUp` and `PgDn` jump between scenes, and `N` goes to the next photo or burst still to decide;
+  - an action panel on the right with a button for every key, for a photo, a burst tile or one frame of a burst: keep, pick, keep too, reject, reject every frame, clearing, burst compare and the app's pick, the loupe, the focus map, zoom and moving around; it can be hidden, and the browser remembers that;
+  - badges for focus verdict, closed eyes, clipping and the burst's best; the bottom bar gives the mark in words, the app's suggestion and reason, and for a burst every frame's mark ("#2 kept by you; #1 rejected by the app");
   - the optional reason picker when the owner overrules the app, and Done culling with a preview of what moves to the trash.
-- **Burst compare (`C`):** the burst's frames side by side, with one face strip per person (100% crops from the full-size JPEG, with eyes, smile and sharpness badges). `P` picks a frame and rejects the rest; `Shift+P` keeps another one too.
-- **Keyboard and guide:** the map of plan §6; `A` accepts the app's pick for a burst; `D` shows flip and zoom timings. `?` opens a guide to the piles, every sign on a photo, the bottom bar, the focus map, burst compare and Done culling, next to the list of keys.
+- **Burst compare (`C`):** the burst's frames side by side, each with its mark, and one face strip per person (100% crops from the full-size JPEG, with eyes, smile and sharpness badges). `P` picks a frame and rejects the rest, moving an earlier keep, while frames the app rejects on its own keep its mark; `Shift+P` keeps another one too. `Esc` and `C` go back to the grid or the loupe, wherever compare was opened from.
+- **Keyboard and guide:** the map of plan §6 and ADR 0011; `A` accepts the app's pick for a burst; `D` shows flip and zoom timings. `?` opens a guide to the marks, what the app decides on its own, the filters, every sign on a photo, bursts, burst compare, the bottom bar, the focus map and Done culling, next to a table of the keys in the grid, the loupe and burst compare.
 
 ### Safe file operations (ADR 0007)
 

@@ -50,7 +50,13 @@
       <p class="muted">The folders page can restore them; your file manager's Trash can too.</p>
     {:else if preview}
       <p><b>{preview.rejects}</b> rejects ({preview.files} files with their camera JPEGs and sidecars, {preview.size}) will move to the drive's trash, which only you empty.</p>
-      <p>{preview.keeps} photos are kept{preview.undecided ? `, including ${preview.undecided} undecided in your call` : ""}. {preview.auto} were decided by the automatic piles.</p>
+      <p>{preview.keeps} photos are kept{preview.undecided ? `, including ${preview.undecided} still to decide` : ""}. {preview.auto} were decided by the app on its own.</p>
+      {#if preview.open_bursts}
+        <p class="muted">
+          {preview.open_bursts === 1 ? "1 burst has" : `${preview.open_bursts} bursts have`} no keep yet; {preview.open_bursts === 1 ? "its" : "their"} open
+          frames are kept.
+        </p>
+      {/if}
     {:else}
       <p class="muted">Counting…</p>
     {/if}

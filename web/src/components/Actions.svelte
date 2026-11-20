@@ -1,12 +1,15 @@
 <script lang="ts">
   import type { Photo } from "../lib/api";
-  import { burstOf, ui, type CullActions } from "../lib/state.svelte";
+  import { burstOf, markOf, ui, type CullActions } from "../lib/state.svelte";
 
   let { photo, act, onhide }: { photo: Photo | null; act: CullActions; onhide: () => void } = $props();
 
   const compare = $derived(ui.mode === "compare");
   const frames = $derived(photo ? burstOf(photo, ui.photos) : []);
-  const best = $derived(frames.length > 1 ? frames.find((p) => p.burst.rank === 1) : undefined);
+  const burst = $derived(frames.length > 1);
+  const best = $derived(burst ? frames.find((p) => p.burst.rank === 1) : undefined);
+  // What the first section acts on: a single photo, a whole burst (its tile in the grid), or one frame of a burst.
+  const scope = $derived(!burst ? "photo" : ui.mode === "grid" ? "burst" : "frame");
 
   // A clicked button hands the focus back, so the keys keep working and Enter does not press it again.
   function run(action: () => void) {
@@ -24,31 +27,44 @@
   </div>
 
   <section>
-    <h3>{compare ? "This frame" : "This photo"}</h3>
-    {#if compare}
+    {#if scope === "burst" && photo}
+      <h3>This burst</h3>
+      <button class="big keep" class:on={photo.decision === "keep"} onclick={run(act.keep)}>
+        <span>✓ Keep the frame shown (#{photo.burst.position})</span><kbd>P</kbd>
+      </button>
+      <p class="note">Picks it: the burst's other frames are rejected.</p>
+      <button class="big reject" class:on={frames.every((f) => markOf(f).verdict === "reject")} onclick={run(act.reject)}>
+        <span>✗ Reject every frame</span><kbd>X</kbd>
+      </button>
+      <button onclick={run(act.clear)} disabled={!frames.some((f) => f.decision)}><span>Clear the burst</span><kbd>U</kbd></button>
+      <p class="note">Click the burst, or press <kbd>C</kbd>, to compare its frames and pick one.</p>
+    {:else if scope === "frame"}
+      <h3>This frame</h3>
       <button class="big keep" class:on={photo?.decision === "keep"} onclick={run(act.keep)} disabled={!photo}>
         <span>✓ Pick this frame</span><kbd>P</kbd>
       </button>
-      <p class="note">Keeps it and rejects the burst's other frames.</p>
+      <p class="note">Keeps it and rejects the burst's other frames, including one you kept before.</p>
       <button onclick={run(act.keepToo)} disabled={!photo}><span>✓ Keep this one too</span><kbd>⇧P</kbd></button>
+      <button class="big reject" class:on={photo?.decision === "reject"} onclick={run(act.reject)} disabled={!photo}>
+        <span>✗ Reject</span><kbd>X</kbd>
+      </button>
+      <button onclick={run(act.clear)} disabled={!photo?.decision}><span>Clear my decision</span><kbd>U</kbd></button>
     {:else}
+      <h3>This photo</h3>
       <button class="big keep" class:on={photo?.decision === "keep"} onclick={run(act.keep)} disabled={!photo}>
         <span>✓ Keep</span><kbd>P</kbd>
       </button>
-    {/if}
-    <button class="big reject" class:on={photo?.decision === "reject"} onclick={run(act.reject)} disabled={!photo}>
-      <span>✗ Reject</span><kbd>X</kbd>
-    </button>
-    <button onclick={run(act.clear)} disabled={!photo?.decision}><span>Clear my decision</span><kbd>U</kbd></button>
-    {#if ui.mode === "grid" && frames.length > 1}
-      <p class="note">On a stacked burst these apply to the frame shown; Compare picks among all of its frames.</p>
+      <button class="big reject" class:on={photo?.decision === "reject"} onclick={run(act.reject)} disabled={!photo}>
+        <span>✗ Reject</span><kbd>X</kbd>
+      </button>
+      <button onclick={run(act.clear)} disabled={!photo?.decision}><span>Clear my decision</span><kbd>U</kbd></button>
     {/if}
   </section>
 
   <section>
     <h3>Burst</h3>
-    <button class:on={compare} onclick={run(act.compare)} disabled={!photo}>
-      <span>{compare ? "Back to the loupe" : "Compare its frames"}</span><kbd>C</kbd>
+    <button class:on={compare} onclick={run(act.compare)} disabled={!burst}>
+      <span>{compare ? (ui.compareFrom === "loupe" ? "Back to the loupe" : "Back to the grid") : "Compare its frames"}</span><kbd>C</kbd>
     </button>
     <button onclick={run(act.acceptPick)} disabled={!best}>
       <span>Accept the app's pick{best ? ` (#${best.burst.position})` : ""}</span><kbd>A</kbd>
@@ -57,8 +73,8 @@
 
   <section>
     <h3>View</h3>
-    <button onclick={run(act.loupe)}>
-      <span>{ui.mode === "grid" ? "Open in the loupe" : "Back to the grid"}</span><kbd>Enter</kbd>
+    <button onclick={run(act.open)} disabled={ui.mode === "grid" && !photo}>
+      <span>{ui.mode !== "grid" ? "Back to the grid" : burst ? "Open burst compare" : "Open in the loupe"}</span><kbd>Enter</kbd>
     </button>
     <button class:on={ui.heat} onclick={run(act.focusMap)} disabled={!photo}><span>Focus map</span><kbd>F</kbd></button>
     <button class:on={ui.zoom} onclick={run(act.zoom)} disabled={!photo}><span>100 % on the eyes</span><kbd>Z</kbd></button>
@@ -71,10 +87,26 @@
       <button onclick={run(act.next)} title="Next (→)">Next →</button>
     </div>
     <div class="pair">
-      <button onclick={run(act.up)} title="↑">{ui.mode === "grid" ? "↑ Row up" : "↑ Burst"}</button>
-      <button onclick={run(act.down)} title="↓">{ui.mode === "grid" ? "↓ Row down" : "↓ Burst"}</button>
+      {#if ui.mode === "grid"}
+        <button onclick={run(act.up)} title="↑">↑ Row up</button>
+        <button onclick={run(act.down)} title="↓">↓ Row down</button>
+      {:else if compare}
+        <button onclick={run(act.up)} title="↑">↑ Burst</button>
+        <button onclick={run(act.down)} title="↓">↓ Burst</button>
+      {:else}
+        <button onclick={run(act.up)} title="↑: the previous photo or whole burst">↑ Previous tile</button>
+        <button onclick={run(act.down)} title="↓: the next photo or whole burst">↓ Next tile</button>
+      {/if}
     </div>
-    <button onclick={run(act.nextPile)}><span>Next pile</span><kbd>Tab</kbd></button>
+    <button onclick={run(act.nextOpen)}><span>Next to decide</span><kbd>N</kbd></button>
+    {#if !compare}
+      <button onclick={run(act.previousScene)}><span>Previous scene</span><kbd>PgUp</kbd></button>
+      <button onclick={run(act.nextScene)}><span>Next scene</span><kbd>PgDn</kbd></button>
+    {/if}
+    <button onclick={run(act.nextFilter)}><span>Next filter</span><kbd>Tab</kbd></button>
+    {#if ui.filter !== null}
+      <button onclick={run(act.clearFilter)}><span>Show every photo</span>{#if ui.mode === "grid"}<kbd>Esc</kbd>{/if}</button>
+    {/if}
   </section>
 
   <section>

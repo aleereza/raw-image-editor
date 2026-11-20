@@ -84,8 +84,8 @@ Camera: Nikon D7100 (NEF), mostly with an AF-S DX Nikkor 35mm f/1.8G, sometimes 
    - then Claude's culling pass, which suggests the best frame in each burst or group of look-alike shots, with a reason;
    - then your personal model sorts every photo into **auto-reject**, **auto-keep** or **your call**, each with a reason.
 4. **Cull** with the keyboard:
-   - Decide the **your call** pile. In a burst, pick the moment, and the other frames become rejects unless you keep them too.
-   - Skim the **auto-reject** pile in one grid and rescue anything it got wrong.
+   - Go through what's still open: the culling view shows every photo by scene, and its **to decide** filter shows what's left. In a burst, pick the moment, and the other frames become rejects unless you keep them too.
+   - Skim what the app **rejected on its own** (another filter) in one grid and rescue anything it got wrong.
    - Press **Done culling**. Rejects move to the system trash, and every decision you made or accepted teaches the model.
 5. **Everything you kept is edited automatically:** straighten → white balance → exposure and tone → color → harmonize across the scene → render → QA → Claude's editing pass.
 6. **Review only the exceptions.** See before/after and the reason for each change. Nudge (±EV, warmer/cooler, rotate), reset, lock, or apply to the whole scene.
@@ -375,7 +375,7 @@ Each photo carries a one-line reason for its pile. When no frame of a burst is p
 - **The trust dial:** each kind of decision has its own switch, set either to "suggest" (the photo lands in your call, with a suggestion) or "automatic" (it goes straight to its pile). The kinds are technical failures, duplicates, closed eyes, expression and moment, and composition.
   - At first, only technical failures and clearly worse duplicates are automatic. Expression and moment stay on "suggest", as you asked.
   - The app proposes switching a kind to automatic once it agreed with your final decision at least 95% of the time over your last few folders. You make the switch.
-- **Picking in a burst:** choosing a frame marks the rest of the burst as rejects; hold Shift to keep more than one.
+- **Picking in a burst:** choosing a frame marks the rest of the burst as rejects, so choosing another frame moves the keep; hold Shift to keep more than one. Frames the app already rejects on its own stay the app's call (ADR 0011).
 - **Done culling:** when you press it, the app shows how many rejects there are and how much space they take. They then move, with their sidecars and paired camera JPEGs, to the drive's trash, where the app or your file manager can restore them (§3.5). Everything you kept goes on to editing. Until then a reject is just a flag you can undo, and rejected frames stay visible in burst compare.
 - **Metrics, shown per folder:** the share of photos decided automatically, how often you changed the app's sort, and the minutes you spent culling.
 - **Initial targets:** after about five folders, half the photos are decided automatically with ≥ 95% agreement, and Claude's suggestion is your pick in ≥ 60% of bursts.
@@ -538,14 +538,14 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 **Views**
 1. **Folders:** recently opened folders with their progress (analyzed → culled → edited → exported), a field to open another folder by path, a button that restores a folder's rejects from the trash, and how much space the drive's trash takes.
 2. **Cull:**
-   - three tabs for the piles: **your call** (opens first), **auto-reject** (one dense grid to skim and rescue from) and **auto-keep**;
-   - a grid grouped by scene, with bursts collapsed to their best frame and a count;
+   - one grid of every photo, grouped by scene, with each burst as one tile holding all of its frames; the piles are filters on it: **to decide**, **rejected by the app** (one dense grid to skim and rescue from) and **kept by the app** (ADR 0011);
+   - a mark on every photo for what Done culling will do with it: filled ✓ or ✗ for your decisions, outlined for what the app decides on its own, an empty ring while it's still open;
    - a loupe that shows the embedded JPEG;
    - badges for focus verdict, eyes and clipping, plus the pile's reason and Claude's suggested frame;
    - a focus heatmap and 100% zoom on the eyes or AF point;
    - the optional reason picker, shown when you overrule the app;
    - a **Done culling** button. It shows how many rejects there are and how much space they take, moves them (with paired camera JPEGs) to the drive's trash, and starts editing everything you kept.
-3. **Burst compare:** 2–6 frames side by side, plus **face strips** with one row per person and one column per frame. Each strip is a 100% crop with eyes, smile and sharpness badges, so finding the frame where everyone looks right takes one glance. Claude's suggested frame is marked. Picking a frame rejects the others; Shift keeps more than one.
+3. **Burst compare:** 2–6 frames side by side, plus **face strips** with one row per person and one column per frame. Each strip is a 100% crop with eyes, smile and sharpness badges, so finding the frame where everyone looks right takes one glance. Claude's suggested frame is marked. Picking a frame rejects the others and moves an earlier keep; Shift keeps more than one.
 4. **Review:** everything you kept, with a "needs a look" filter and before/after. Each changed parameter gets a chip with the agent's reason and confidence, e.g. "WB 5450 K · 82% · gray-edge and skin agree". From here you can nudge, reset to as-shot, lock, apply to the burst or scene, or open the photo in RawTherapee.
 5. **Export:** one button that writes full-size JPEGs of everything you kept into `jpg/` inside the folder, with metadata (artist/copyright) and progress.
 6. **Taste:** your taste notes (editable), Claude's proposed changes to approve, the trust-dial switches, and how well the app agreed with you, folder by folder.
@@ -555,14 +555,17 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 
 | Key | Action | Key | Action |
 |---|---|---|---|
-| ← → | previous / next frame | `\` | before / after |
-| ↑ ↓ | previous / next burst | `[` `]` | exposure −/+ 0.15 EV |
-| P X U | keep / reject / unflag | `,` `.` | cooler / warmer |
+| ← → | previous / next photo or burst (in compare: frame) | `\` | before / after |
+| ↑ ↓ | row above / below (in compare: burst) | `[` `]` | exposure −/+ 0.15 EV |
+| P X U | keep / reject / unflag; on a burst tile, P picks the frame shown and X and U act on every frame | `,` `.` | cooler / warmer |
 | 1–5 | quick reason, when the picker shows | `{` `}` | rotate −/+ 0.1° |
 | Z | 100% on eyes / AF point | R | reset parameter to as-shot |
 | F | focus heatmap | L | lock parameter |
 | C | burst compare | E | open in RawTherapee |
 | A | accept Claude's burst suggestion | ? | help |
+| N | next photo or burst to decide | | |
+| PgUp PgDn | previous / next scene | | |
+| Tab | next filter | | |
 
 **Speed**
 - **Culling is Geeqie-fast.** It never waits on RawTherapee. It shows the camera's embedded JPEGs: screen-sized copies cached when the folder opens, and the full-size one for 100% zoom. The browser prefetches and decodes the next and previous five photos.
@@ -729,7 +732,7 @@ Built on branch `claude/phase-1-culling` and waiting for your review and a first
 - The three piles and the trust dial: technical failures and clearly worse duplicates automatic, everything else suggested. A first personal model that learns from your decisions, starting with the first folder.
 - Safe file operations (§3.5): trash-only removal with the same-drive check, restore, the trash-size warning, and tests that forbid hard deletes.
 - UI:
-  - folders, the three pile tabs, the cull grid, and the loupe with 100% zoom;
+  - folders, the cull grid (three pile tabs at first; one grid of every photo with the piles as filters since ADR 0011), and the loupe with 100% zoom;
   - the focus heatmap, and burst compare with face strips (picking a frame rejects the rest);
   - the keyboard map, and "Done culling" (rejects to the system trash).
 - **Exit:**
@@ -830,6 +833,7 @@ Built on branch `claude/phase-1-culling` and waiting for your review and a first
 | 21 | Photo history | Not used for learning; the culling model learns from new folders, and old manual WB picks only test the WB agent | v0.5 | §4.6, §4.11 |
 | 22 | Looks | You build named looks for different scenarios in the look lab; neutral until then | v0.5 | §4.12 |
 | 23 | Ratings | None: the app neither rates photos nor reads RawTherapee's ratings | ADR 0010 | §3.3, §6 |
+| 24 | Culling view | Every photo in one grid by scene, each burst one tile; a mark on every photo says what Done culling does and who decided; the piles become filters; `P` moves a burst's keep, `Shift+P` adds one, and a whole burst can be rejected at once | ADR 0011 | §4.4, §6 |
 
 **Still open:** nothing blocking. Backups wait for the NAS: once it's there, the app can copy each finished folder to it and verify the copy.
 
