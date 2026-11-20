@@ -3,13 +3,26 @@
   import { api, onReachability, type Photo } from "./lib/api";
   import { startTiming, isDecoded } from "./lib/images";
   import { urls } from "./lib/api";
-  import { PILES, REASONS, burstOf, loadFolder, refreshFolder, say, tilesOf, ui } from "./lib/state.svelte";
+  import {
+    PILES,
+    REASONS,
+    burstOf,
+    loadFolder,
+    refreshFolder,
+    say,
+    firstInPile,
+    setPanel,
+    tilesOf,
+    ui,
+    type CullActions,
+  } from "./lib/state.svelte";
   import Folders from "./components/Folders.svelte";
   import Grid from "./components/Grid.svelte";
   import Loupe from "./components/Loupe.svelte";
   import Compare from "./components/Compare.svelte";
   import Help from "./components/Help.svelte";
   import DoneDialog from "./components/DoneDialog.svelte";
+  import Actions from "./components/Actions.svelte";
 
   const items = $derived(ui.photos.filter((p) => p.state === "present" && p.pile === ui.pile));
   const tiles = $derived(tilesOf(items));
@@ -110,11 +123,73 @@
   function cyclePile(delta: number) {
     const i = PILES.findIndex((p) => p.id === ui.pile);
     ui.pile = PILES[(i + delta + PILES.length) % PILES.length].id;
-    const first = ui.photos.find((p) => p.state === "present" && p.pile === ui.pile);
-    ui.currentId = first?.id ?? null;
+    ui.currentId = firstInPile(ui.pile);
     ui.zoom = false;
     if (ui.mode === "compare") ui.mode = "loupe";
   }
+
+  function toggleZoom(photo: Photo) {
+    if (ui.mode === "grid" || ui.mode === "compare") ui.mode = "loupe";
+    if (!ui.zoom) startTiming("zoom", isDecoded(urls.full(photo)));
+    ui.zoom = !ui.zoom;
+  }
+
+  // Everything the culling page can do; the keys below and the action panel both call these.
+  const act: CullActions = {
+    keep: () => {
+      if (current) ui.mode === "compare" ? pick(current, false) : decide(current, "keep");
+    },
+    keepToo: () => {
+      if (current) pick(current, true);
+    },
+    reject: () => {
+      if (current) decide(current, "reject", ui.mode !== "compare");
+    },
+    clear: () => {
+      if (current) decide(current, null, false);
+    },
+    rate: (stars) => {
+      if (current) rate(current, stars);
+    },
+    previous: () => step(-1),
+    next: () => step(1),
+    up: () => (ui.mode === "grid" ? step(-gridColumns) : burstStep(-1)),
+    down: () => (ui.mode === "grid" ? step(gridColumns) : burstStep(1)),
+    nextPile: () => cyclePile(1),
+    previousPile: () => cyclePile(-1),
+    loupe: () => {
+      ui.mode = ui.mode === "grid" ? "loupe" : "grid";
+      ui.zoom = false;
+    },
+    zoom: () => {
+      if (current) toggleZoom(current);
+    },
+    focusMap: () => {
+      if (!current) return;
+      if (ui.mode === "grid") ui.mode = "loupe";
+      ui.heat = !ui.heat;
+    },
+    compare: () => {
+      if (!current) return;
+      ui.zoom = false;
+      ui.mode = ui.mode === "compare" ? "loupe" : "compare";
+    },
+    acceptPick: () => {
+      if (!current) return;
+      const frames = burstOf(current, ui.photos);
+      const best = frames.find((p) => p.burst.rank === 1);
+      if (frames.length > 1 && best) pick(best, false);
+      else say("not a burst: nothing to accept");
+    },
+    back: () => {
+      if (ui.help) ui.help = false;
+      else if (ui.zoom) ui.zoom = false;
+      else if (ui.mode === "compare") ui.mode = "loupe";
+      else if (ui.mode === "loupe") ui.mode = "grid";
+    },
+    help: () => (ui.help = !ui.help),
+    timings: () => (ui.debug = !ui.debug),
+  };
 
   function onKey(event: KeyboardEvent) {
     if (ui.view !== "cull" || ui.done) return;
@@ -128,85 +203,31 @@
       return;
     }
     if (ui.reasonFor !== null && key !== "Shift") ui.reasonFor = null;
-    const photo = current;
-    const handled = () => event.preventDefault();
-    switch (key) {
-      case "ArrowRight":
-        handled();
-        return step(1);
-      case "ArrowLeft":
-        handled();
-        return step(-1);
-      case "ArrowDown":
-        handled();
-        return ui.mode === "grid" ? step(gridColumns) : burstStep(1);
-      case "ArrowUp":
-        handled();
-        return ui.mode === "grid" ? step(-gridColumns) : burstStep(-1);
-      case "Enter":
-        handled();
-        ui.mode = ui.mode === "grid" ? "loupe" : "grid";
-        ui.zoom = false;
-        return;
-      case "Escape":
-        handled();
-        if (ui.help) ui.help = false;
-        else if (ui.zoom) ui.zoom = false;
-        else if (ui.mode === "compare") ui.mode = "loupe";
-        else if (ui.mode === "loupe") ui.mode = "grid";
-        return;
-      case "Tab":
-        handled();
-        return cyclePile(event.shiftKey ? -1 : 1);
-      case "?":
-        handled();
-        ui.help = !ui.help;
-        return;
-    }
-    if (!photo) return;
-    switch (key.toLowerCase()) {
-      case "p":
-        handled();
-        if (ui.mode === "compare") return pick(photo, event.shiftKey);
-        return decide(photo, "keep");
-      case "x":
-        handled();
-        return decide(photo, "reject", ui.mode !== "compare");
-      case "u":
-        handled();
-        return decide(photo, null, false);
-      case "z":
-        handled();
-        if (ui.mode === "grid") ui.mode = "loupe";
-        if (ui.mode === "compare") ui.mode = "loupe";
-        if (!ui.zoom) startTiming("zoom", isDecoded(urls.full(photo)));
-        ui.zoom = !ui.zoom;
-        return;
-      case "f":
-        handled();
-        if (ui.mode === "grid") ui.mode = "loupe";
-        ui.heat = !ui.heat;
-        return;
-      case "c":
-        handled();
-        ui.zoom = false;
-        ui.mode = ui.mode === "compare" ? "loupe" : "compare";
-        return;
-      case "a": {
-        handled();
-        const frames = burstOf(photo, ui.photos);
-        const best = frames.find((p) => p.burst.rank === 1);
-        if (frames.length > 1 && best) return pick(best, false);
-        return say("not a burst: nothing to accept");
-      }
-      case "d":
-        handled();
-        ui.debug = !ui.debug;
-        return;
-    }
-    if (/^[0-5]$/.test(key)) {
-      handled();
-      rate(photo, Number(key));
+    const keys: Record<string, () => void> = {
+      ArrowRight: act.next,
+      ArrowLeft: act.previous,
+      ArrowDown: act.down,
+      ArrowUp: act.up,
+      Enter: act.loupe,
+      Escape: act.back,
+      Tab: event.shiftKey ? act.previousPile : act.nextPile,
+      "?": act.help,
+      p: event.shiftKey && ui.mode === "compare" ? act.keepToo : act.keep,
+      x: act.reject,
+      u: act.clear,
+      z: act.zoom,
+      f: act.focusMap,
+      c: act.compare,
+      a: act.acceptPick,
+      d: act.timings,
+    };
+    const action = keys[key] ?? keys[key.toLowerCase()];
+    if (action) {
+      event.preventDefault();
+      action();
+    } else if (/^[0-5]$/.test(key)) {
+      event.preventDefault();
+      act.rate(Number(key));
     }
   }
 
@@ -251,6 +272,11 @@
     else history.replaceState(null, "", "#");
   });
 
+  $effect(() => {
+    document.title =
+      ui.view === "cull" && ui.folder ? `Culling · ${ui.folder.name} · Raw Image Editor` : "Folders · Raw Image Editor";
+  });
+
   const running = $derived(ui.jobs.filter((j) => j.state === "running" || j.state === "queued"));
   let tick = $state(0);
   $effect(() => {
@@ -273,16 +299,18 @@
 
 <div class="app">
   <header>
-    <button class="logo" onclick={() => (ui.view = "folders")} title="Folders">rie</button>
+    <button class="home" onclick={() => (ui.view = "folders")} title="Back to the folders">Raw Image Editor</button>
+    <span class="crumb" aria-hidden="true">›</span>
+    <h1>{ui.view === "cull" ? "Culling" : "Folders"}</h1>
     {#if ui.view === "cull" && ui.folder}
       <span class="folder" title={ui.folder.path}>{ui.folder.name}</span>
-      <nav>
+      <nav aria-label="Piles">
         {#each PILES as pile}
           <button
             class:active={ui.pile === pile.id}
             onclick={() => {
               ui.pile = pile.id;
-              ui.currentId = ui.photos.find((p) => p.state === "present" && p.pile === pile.id)?.id ?? null;
+              ui.currentId = firstInPile(pile.id);
             }}>{pile.label} <span class="count">{counts[pile.id]}</span></button
           >
         {/each}
@@ -290,6 +318,7 @@
       <span class="muted">{undecided} undecided in your call</span>
       <span class="spacer"></span>
       {#if ui.folder.culled_at}<span class="badge keep">culled</span>{/if}
+      {#if !ui.panel}<button onclick={() => setPanel(true)} title="Show the action panel">Actions</button>{/if}
       <button class="primary" onclick={() => (ui.done = true)} disabled={!ui.folder.available}>Done culling</button>
     {:else}
       <span class="spacer"></span>
@@ -302,29 +331,34 @@
         drive: {ui.status.drive.configured ? ui.status.drive.state : "not configured"}
       </span>
     {/if}
-    <button onclick={() => (ui.help = !ui.help)} title="Keyboard (?)">?</button>
+    <button onclick={() => (ui.help = !ui.help)} title="Guide and keys (?)">?</button>
   </header>
 
   {#if ui.offline}
     <div class="offline">
-      Can't reach <code>rie serve</code>. Start it again in a terminal with <code>uv run rie serve</code> and keep it
-      running; this page reconnects by itself.
+      Can't reach the Raw Image Editor server. Start it again in a terminal with <code>uv run rie serve</code> and keep
+      it running; this page reconnects by itself.
     </div>
   {/if}
 
-  <main>
-    {#if ui.view === "folders"}
-      <Folders />
-    {:else if ui.mode === "grid"}
-      <Grid {tiles} bind:columns={gridColumns} onopen={(id: number) => { select(id, false); ui.mode = "loupe"; }} />
-    {:else if ui.mode === "compare" && current}
-      <Compare photo={current} onselect={(id: number) => select(id)} onpick={(p: Photo, keep: boolean) => pick(p, keep)} />
-    {:else if current}
-      <Loupe photo={current} {items} />
-    {:else}
-      <p class="empty muted">Nothing in this pile. <kbd>Tab</kbd> switches piles.</p>
+  <div class="body">
+    <main>
+      {#if ui.view === "folders"}
+        <Folders />
+      {:else if ui.mode === "grid"}
+        <Grid {tiles} bind:columns={gridColumns} onopen={(id: number) => { select(id, false); ui.mode = "loupe"; }} />
+      {:else if ui.mode === "compare" && current}
+        <Compare photo={current} onselect={(id: number) => select(id)} onpick={(p: Photo, keep: boolean) => pick(p, keep)} />
+      {:else if current}
+        <Loupe photo={current} {items} />
+      {:else}
+        <p class="empty muted">Nothing in this pile. <kbd>Tab</kbd> switches piles.</p>
+      {/if}
+    </main>
+    {#if ui.view === "cull" && ui.panel}
+      <Actions photo={current} {act} onhide={() => setPanel(false)} />
     {/if}
-  </main>
+  </div>
 
   {#if current && ui.view === "cull"}
     <footer>
@@ -359,13 +393,17 @@
 
 <style>
   .app { display: flex; flex-direction: column; height: 100%; }
+  header, .offline, footer { flex: none; } /* never squeezed: a wrapped top bar stays clickable */
   .offline { background: var(--reject); color: #1d0505; padding: 6px 12px; font-weight: 600; }
   .offline code { background: #0002; padding: 0 4px; border-radius: 3px; }
   header {
-    display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line);
-    background: var(--panel); min-height: 42px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 6px 10px;
+    border-bottom: 1px solid var(--line); background: var(--panel); min-height: 42px;
   }
-  .logo { font-weight: 700; letter-spacing: 0.05em; }
+  .home { background: none; border: none; padding: 0; font-weight: 700; color: var(--text); }
+  .home:hover { color: var(--accent); }
+  .crumb { color: var(--muted); margin: 0 -4px; }
+  h1 { font-size: 14px; font-weight: 600; margin: 0; }
   .folder { font-weight: 600; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   nav { display: flex; gap: 4px; }
   nav button.active { border-color: var(--accent); background: #24324a; }
@@ -374,7 +412,8 @@
   .job { color: var(--warn); font-size: 12px; }
   .drive { font-size: 12px; color: var(--muted); }
   .drive.bad { color: var(--reject); }
-  main { position: relative; overflow: hidden; min-height: 0; flex: 1 1 auto; }
+  .body { display: flex; flex: 1 1 auto; min-height: 0; }
+  main { position: relative; overflow: hidden; min-width: 0; flex: 1 1 auto; }
   footer {
     display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-top: 1px solid var(--line);
     background: var(--panel); font-size: 13px; min-height: 32px; white-space: nowrap; overflow: hidden;

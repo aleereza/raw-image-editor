@@ -1,4 +1,4 @@
-// Types and calls for the `rie serve` API. Everything is JSON except the images.
+// Types and calls for the Raw Image Editor server's API (`uv run rie serve`). Everything is JSON except the images.
 
 export type Pile = "your_call" | "auto_reject" | "auto_keep";
 export type Decision = "keep" | "reject" | null;
@@ -126,7 +126,7 @@ export interface Job {
   folder_id: number | null;
 }
 
-// Called with false when a request cannot reach `rie serve` at all, and with true when one gets through.
+// Called with false when a request cannot reach the server at all, and with true when one gets through.
 let reachable: (ok: boolean) => void = () => undefined;
 export function onReachability(callback: (ok: boolean) => void): void {
   reachable = callback;
@@ -142,7 +142,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     });
   } catch {
     reachable(false);
-    throw new Error("cannot reach rie serve: is it still running?");
+    throw new Error("cannot reach the Raw Image Editor server: is `uv run rie serve` still running?");
   }
   reachable(true);
   if (!response.ok) {

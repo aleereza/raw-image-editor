@@ -84,7 +84,7 @@ class FullCache:
 
 
 def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
-    app = FastAPI(title="raw-image-editor", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app = FastAPI(title="Raw Image Editor", docs_url="/api/docs", openapi_url="/api/openapi.json")
     catalog.connect(cfg.catalog_path).close()  # create or migrate before the first request
     runner = JobRunner(cfg) if start_jobs else None
     full_cache = FullCache()
@@ -601,7 +601,7 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
         @app.get("/")
         def no_build() -> HTMLResponse:
             return HTMLResponse(
-                "<h1>raw-image-editor</h1><p>The web UI is not built yet: run <code>npm install</code> and "
+                "<h1>Raw Image Editor</h1><p>The web UI is not built yet: run <code>npm install</code> and "
                 "<code>npm run build</code> in <code>web/</code>, then reload. The API is at /api/docs.</p>"
             )
 

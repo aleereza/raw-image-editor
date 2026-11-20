@@ -20,6 +20,8 @@ button {
   padding: 5px 10px; font: inherit; cursor: pointer;
 }
 button:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button:disabled:hover { border-color: var(--line); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
 button.danger { background: var(--reject); border-color: var(--reject); color: #200b0b; font-weight: 600; }
 input[type="text"] {

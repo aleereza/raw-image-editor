@@ -58,19 +58,20 @@ Run in `analysis.workers` processes (3 by default), each photo read once:
 
 ### Culling UI (`rie serve`, `src/rie/api/`, `web/`)
 
-FastAPI serves the API and a Svelte 5 app (built once with `npm run build` in `web/`).
+FastAPI serves the API and a Svelte 5 app (built once with `npm run build` in `web/`). The top bar names the app, Raw Image Editor, which leads back to the folders, and then the page: Folders or Culling.
 
 - **Folders:** the subfolders of the photos folder (newest name first), each opened with one click, with a path field for anything else; opening runs as a background job with progress. Also the folders opened before, the photo drive's state, the trash's size and free space, warnings about anything that empties the trash, and a button that restores a folder's rejects.
 - **The server:** `rie serve --open` opens the browser once the server answers. `Ctrl+C` stops it within a second even while a page is open, and the page then shows a banner until the server is back. The analysis workers' native log lines (OpenCV, MediaPipe) go to `<cache>/logs/analysis.log`, not the terminal.
 - **Cull:**
   - the three pile tabs with counts;
-  - a grid grouped by scene, with bursts collapsed to their best frame and a count;
+  - a grid grouped by scene, with bursts collapsed to their best frame and a count; a pile opens on the frame its first tile shows, and a stack shows whichever of its frames is selected;
   - a loupe that shows the cached 2048 px copy and prefetches and decodes the five photos on either side;
-  - `Z` for 100% on the eyes or AF point (the full-size JPEG is prefetched after 0.3 s on a photo), and `F` for the focus heatmap with faces, eyes and the AF point;
+  - `Z` for 100% on the eyes or AF point (the full-size JPEG is prefetched after 0.3 s on a photo), moved by dragging or scrolling (a mouse wheel or two fingers on a touchpad) and never past the image's edges, and `F` for the focus heatmap with faces, eyes and the AF point;
+  - an action panel on the right with a button for every key: Keep and Reject (in burst compare: pick this frame, or keep it too), clearing a decision, ratings, burst compare and the app's pick, the loupe, the focus map, zoom and moving around; it can be hidden, and the browser remembers that;
   - badges for decision, focus verdict, closed eyes, clipping, rating and the burst's best, with the app's suggestion and reason under each photo;
   - the optional reason picker when the owner overrules the app, and Done culling with a preview of what moves to the trash.
 - **Burst compare (`C`):** the burst's frames side by side, with one face strip per person (100% crops from the full-size JPEG, with eyes, smile and sharpness badges). `P` picks a frame and rejects the rest; `Shift+P` keeps another one too.
-- **Keyboard:** the map of plan §6, shown with `?`; `A` accepts the app's pick for a burst; `D` shows flip and zoom timings.
+- **Keyboard and guide:** the map of plan §6; `A` accepts the app's pick for a burst; `D` shows flip and zoom timings. `?` opens a guide to the piles, every sign on a photo, the bottom bar, the focus map, burst compare and Done culling, next to the list of keys.
 
 ### Safe file operations (ADR 0007)
 

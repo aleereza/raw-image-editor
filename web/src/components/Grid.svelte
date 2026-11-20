@@ -34,14 +34,14 @@
       <div class="scene-head muted">Scene {s + 1} · {scene.tiles.reduce((n, t) => n + t.frames.length, 0)} photos</div>
       <div class="tiles">
         {#each scene.tiles as tile (tile.photo.id)}
-          {@const p = tile.photo}
-          {@const active = tile.frames.some((f) => f.id === ui.currentId)}
+          {@const p = tile.frames.find((f) => f.id === ui.currentId) ?? tile.photo}
+          {@const active = p.id === ui.currentId}
           <button
             class="tile"
             class:active
             class:keep={p.decision === "keep"}
             class:reject={p.decision === "reject"}
-            data-photo={tile.frames.find((f) => f.id === ui.currentId)?.id ?? p.id}
+            data-photo={p.id}
             style:width="{size}px"
             onclick={() => (ui.currentId = p.id)}
             ondblclick={() => onopen(p.id)}
