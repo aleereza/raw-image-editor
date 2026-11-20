@@ -10,6 +10,48 @@ export const PILES: { id: Pile; label: string }[] = [
 
 export const REASONS = ["blur", "eyes", "expression", "duplicate", "composition"] as const;
 
+// Everything the culling page can do; the keys and the action panel both call these.
+export interface CullActions {
+  keep: () => void; // in burst compare: pick this frame, rejecting the rest of the burst
+  keepToo: () => void; // in burst compare: keep this frame as well
+  reject: () => void;
+  clear: () => void;
+  rate: (stars: number) => void;
+  previous: () => void;
+  next: () => void;
+  up: () => void;
+  down: () => void;
+  nextPile: () => void;
+  previousPile: () => void;
+  loupe: () => void;
+  zoom: () => void;
+  focusMap: () => void;
+  compare: () => void;
+  acceptPick: () => void;
+  back: () => void;
+  help: () => void;
+  timings: () => void;
+}
+
+const PANEL_KEY = "raw-image-editor.panel";
+
+function storedPanel(): boolean {
+  try {
+    return localStorage.getItem(PANEL_KEY) !== "hidden";
+  } catch {
+    return true; // storage blocked (a private window): the panel shows
+  }
+}
+
+export function setPanel(visible: boolean): void {
+  ui.panel = visible;
+  try {
+    localStorage.setItem(PANEL_KEY, visible ? "shown" : "hidden");
+  } catch {
+    // not remembered; it still applies until the page reloads
+  }
+}
+
 export const ui = $state({
   view: "folders" as "folders" | "cull",
   mode: "grid" as "grid" | "loupe" | "compare",
@@ -27,7 +69,8 @@ export const ui = $state({
   jobs: [] as Job[],
   message: "",
   reasonFor: null as number | null,
-  offline: false, // `rie serve` cannot be reached
+  offline: false, // the server (`uv run rie serve`) cannot be reached
+  panel: storedPanel(), // the action panel on the right
 });
 
 const analyses = new Map<number, Promise<Analysis>>();
@@ -58,8 +101,13 @@ export async function loadFolder(id: number): Promise<void> {
   if (!photos.some((p) => p.id === ui.currentId)) {
     const first = PILES.map((pile) => photos.find((p) => p.state === "present" && p.pile === pile.id)).find(Boolean);
     ui.pile = (first?.pile as Pile) ?? "your_call";
-    ui.currentId = photos.find((p) => p.state === "present" && p.pile === ui.pile)?.id ?? null;
+    ui.currentId = firstInPile(ui.pile);
   }
+}
+
+// The photo a pile opens on: the one shown on its first tile (for a burst, its best frame in the pile).
+export function firstInPile(pile: Pile): number | null {
+  return tilesOf(ui.photos.filter((p) => p.state === "present" && p.pile === pile))[0]?.photo.id ?? null;
 }
 
 export async function refreshFolder(): Promise<void> {

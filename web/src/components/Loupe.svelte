@@ -3,6 +3,7 @@
   import { urls, type Analysis, type Photo } from "../lib/api";
   import { load, stopTiming } from "../lib/images";
   import { analysisFor, ui } from "../lib/state.svelte";
+  import { blurColour } from "../lib/focus";
 
   let { photo, items }: { photo: Photo; items: Photo[] } = $props();
 
@@ -11,12 +12,15 @@
   let width = $state(0);
   let height = $state(0);
   let analysis = $state<Analysis | null>(null);
-  let shownId = $state<number | null>(null);
-  let natural = $state({ w: 0, h: 0 });
+  // What the stage shows: the <img>, whose photo, whether it is the full-size copy, and its size in pixels.
+  let shown = $state.raw<{ img: HTMLImageElement; id: number; zoomed: boolean; w: number; h: number } | null>(null);
   let offset = $state({ x: 0, y: 0 }); // zoom: where the image's top-left sits in the stage
   let loading = $state(false);
+  let dragging = $state(false);
 
   const PREFETCH = 5;
+  // Changes only when another photo comes on screen, not when the photo list is refreshed.
+  const photoId = $derived(photo.id);
 
   function show(img: HTMLImageElement, id: number, zoomed: boolean) {
     if (!stage) return;
@@ -27,8 +31,10 @@
       if (old) old.remove();
       stage.prepend(img);
     }
-    shownId = id;
-    natural = { w: img.naturalWidth, h: img.naturalHeight };
+    // The same image shown again (the list refreshed) changes nothing, so a zoomed view keeps its place.
+    if (!(shown && shown.img === img && shown.id === id && shown.zoomed === zoomed)) {
+      shown = { img, id, zoomed, w: img.naturalWidth, h: img.naturalHeight };
+    }
     loading = false;
     stopTiming();
   }
@@ -49,22 +55,26 @@
     });
   });
 
-  // Prefetch and decode the neighbours; after a short pause, the full size and the analysis of this photo too.
+  // Prefetch and decode the neighbours.
   $effect(() => {
-    const p = photo;
     const list = items;
-    const i = list.findIndex((x) => x.id === p.id);
-    if (i >= 0) {
-      for (let d = 1; d <= PREFETCH; d += 1) {
-        if (list[i + d]) load(urls.screen(list[i + d]));
-        if (list[i - d]) load(urls.screen(list[i - d]));
-      }
+    const i = list.findIndex((x) => x.id === photoId);
+    if (i < 0) return;
+    for (let d = 1; d <= PREFETCH; d += 1) {
+      if (list[i + d]) load(urls.screen(list[i + d]));
+      if (list[i - d]) load(urls.screen(list[i - d]));
     }
+  });
+
+  // After a short pause on a photo, fetch its full size and its analysis.
+  $effect(() => {
+    const id = photoId;
+    const full = untrack(() => urls.full(photo));
     analysis = null;
     const timer = setTimeout(() => {
-      load(urls.full(p));
-      analysisFor(p.id).then((a) => {
-        if (photo.id === p.id) analysis = a;
+      load(full);
+      analysisFor(id).then((a) => {
+        if (photoId === id) analysis = a;
       });
     }, 300);
     return () => clearTimeout(timer);
@@ -88,60 +98,78 @@
     return [0.5, 0.5];
   }
 
-  $effect(() => {
-    if (!ui.zoom || shownId !== photo.id || !natural.w) return;
+  // The full-size copy's size on screen at 100 %: one image pixel per device pixel.
+  const zoomedSize = $derived.by(() => {
+    if (!shown?.zoomed) return null;
     const dpr = window.devicePixelRatio || 1;
-    const w = natural.w / dpr;
-    const h = natural.h / dpr;
-    const [u, v] = focusPoint(analysis);
-    const clamp = (value: number, size: number, view: number) => (size <= view ? (view - size) / 2 : Math.min(0, Math.max(view - size, value)));
-    offset = { x: clamp(width / 2 - u * w, w, width), y: clamp(height / 2 - v * h, h, height) };
+    return { w: shown.w / dpr, h: shown.h / dpr };
   });
+  // Zoomed in on this photo, with its full-size copy on screen.
+  const zoomedNow = $derived(ui.zoom && zoomedSize !== null && shown?.id === photoId);
 
+  // Keep the zoomed image over the stage: centred along a side where it is smaller, never moved past its edges.
+  function clamp(x: number, y: number): { x: number; y: number } {
+    if (!zoomedSize) return { x, y };
+    const along = (value: number, size: number, view: number) =>
+      size <= view ? (view - size) / 2 : Math.min(0, Math.max(view - size, value));
+    return { x: along(x, zoomedSize.w, width), y: along(y, zoomedSize.h, height) };
+  }
+
+  // Zooming in centres on the eyes; when the analysis arrives a moment later, it centres again.
   $effect(() => {
-    const img = stage?.querySelector("img");
-    if (!img) return;
-    if (ui.zoom) {
-      const dpr = window.devicePixelRatio || 1;
-      img.style.width = `${natural.w / dpr}px`;
-      img.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
-    } else {
-      img.style.width = "";
-      img.style.transform = "";
-    }
+    if (!zoomedNow || !zoomedSize) return;
+    const [u, v] = focusPoint(analysis);
+    offset = clamp(width / 2 - u * zoomedSize.w, height / 2 - v * zoomedSize.h);
   });
 
-  // Drag to pan at 100%.
+  // Size and place the image: the full-size copy at 100 % where `offset` says, the screen copy fitted by CSS.
+  // Everything it depends on is read before anything else, so it follows every change.
+  $effect(() => {
+    const s = shown;
+    const size = zoomedSize;
+    const { x, y } = offset;
+    if (!s) return;
+    s.img.style.width = size ? `${size.w}px` : "";
+    s.img.style.transform = size ? `translate(${x}px, ${y}px)` : "";
+  });
+
+  // Move the zoomed image by dragging it, or by scrolling (a mouse wheel, or two fingers on a touchpad).
   let drag: { x: number; y: number; ox: number; oy: number } | null = null;
   function down(event: PointerEvent) {
-    if (!ui.zoom) return;
+    if (!zoomedNow || event.button !== 0) return;
     drag = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
+    dragging = true;
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   }
   function move(event: PointerEvent) {
     if (!drag) return;
-    offset = { x: drag.ox + event.clientX - drag.x, y: drag.oy + event.clientY - drag.y };
+    offset = clamp(drag.ox + event.clientX - drag.x, drag.oy + event.clientY - drag.y);
   }
   function up() {
     drag = null;
+    dragging = false;
   }
+  $effect(() => {
+    const el = stage;
+    if (!el) return;
+    const wheel = (event: WheelEvent) => {
+      if (!zoomedNow || event.ctrlKey) return; // Ctrl+scroll and pinching stay the browser's own zoom
+      event.preventDefault();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientHeight : 1; // lines, pages, pixels
+      offset = clamp(offset.x - event.deltaX * unit, offset.y - event.deltaY * unit);
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  });
 
   // The displayed image's rectangle when fitted, for the heatmap.
   const fit = $derived.by(() => {
-    if (!natural.w || !width || !height) return null;
-    const scale = Math.min(width / natural.w, height / natural.h, 1); // as object-fit: contain, never enlarged
-    const w = natural.w * scale;
-    const h = natural.h * scale;
+    if (!shown || shown.zoomed || !shown.w || !width || !height) return null;
+    const scale = Math.min(width / shown.w, height / shown.h, 1); // as object-fit: contain, never enlarged
+    const w = shown.w * scale;
+    const h = shown.h * scale;
     return { x: (width - w) / 2, y: (height - h) / 2, w, h };
   });
-
-  function colour(blur: number): string {
-    // green at 0.4 or less, yellow around 1, red from 1.8 (ADR 0008's provisional thresholds)
-    const t = Math.min(Math.max((blur - 0.4) / 1.4, 0), 1);
-    const r = Math.round(t < 0.5 ? 80 + t * 2 * 175 : 255);
-    const g = Math.round(t < 0.5 ? 220 : 220 - (t - 0.5) * 2 * 190);
-    return `rgba(${r}, ${g}, 60, 0.45)`;
-  }
 
   $effect(() => {
     if (!canvas || !fit) return;
@@ -152,7 +180,7 @@
     canvas.height = Math.round(fit.h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, fit.w, fit.h);
-    if (!ui.heat || !analysis || shownId !== photo.id) return;
+    if (!ui.heat || !analysis || shown?.id !== photoId) return;
     const heat = analysis.heat;
     if (heat) {
       const cw = fit.w / heat.cols;
@@ -161,7 +189,7 @@
         for (let c = 0; c < heat.cols; c += 1) {
           const value = heat.blur[r * heat.cols + c];
           if (value === null) continue;
-          ctx.fillStyle = colour(value);
+          ctx.fillStyle = blurColour(value);
           ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
         }
       }
@@ -190,13 +218,15 @@
 
 <div
   class="stage"
-  class:zoom={ui.zoom}
+  class:zoom={shown?.zoomed ?? false}
+  class:dragging
   bind:this={stage}
   bind:clientWidth={width}
   bind:clientHeight={height}
   onpointerdown={down}
   onpointermove={move}
   onpointerup={up}
+  onpointercancel={up}
   role="presentation"
 >
   {#if fit && !ui.zoom}
@@ -205,16 +235,17 @@
   {#if loading}<div class="loading muted">{ui.zoom ? "loading the full-size JPEG…" : "loading…"}</div>{/if}
   {#if ui.heat && !ui.zoom}
     <div class="legend">
-      sharp <span style:background={colour(0.3)}></span><span style:background={colour(1)}></span><span style:background={colour(2)}></span> soft
+      sharp <span style:background={blurColour(0.3)}></span><span style:background={blurColour(1)}></span><span style:background={blurColour(2)}></span> soft
       {#if analysis?.focus.reason}<span class="muted"> · {analysis.focus.reason}</span>{/if}
     </div>
   {/if}
-  {#if ui.zoom}<div class="legend">100% · drag to pan · <kbd>Z</kbd> back</div>{/if}
+  {#if ui.zoom}<div class="legend">100 % · drag or scroll to move around · <kbd>Z</kbd> back</div>{/if}
 </div>
 
 <style>
   .stage { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #0a0a0b; }
   .stage.zoom { display: block; cursor: grab; }
+  .stage.zoom.dragging { cursor: grabbing; }
   .stage :global(img.fit) { max-width: 100%; max-height: 100%; object-fit: contain; display: block; user-select: none; }
   .stage :global(img.zoomed) { position: absolute; left: 0; top: 0; max-width: none; max-height: none; user-select: none; }
   canvas { position: absolute; pointer-events: none; }
