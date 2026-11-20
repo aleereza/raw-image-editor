@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shutil
+import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from . import catalog, config, drive, locations, safety
@@ -183,6 +187,18 @@ def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     return 0
 
 
+def wait_for_port(host: str, port: int, timeout: float = 15.0) -> bool:
+    """True once something accepts connections on host:port, False after `timeout` seconds."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.1)
+    return False
+
+
 def cmd_serve(args: argparse.Namespace, cfg: config.Config) -> int:
     import uvicorn
 
@@ -192,10 +208,21 @@ def cmd_serve(args: argparse.Namespace, cfg: config.Config) -> int:
     if not (WEB_DIST / "index.html").is_file():
         print("note: the web UI is not built; run `npm install` and `npm run build` in web/", file=sys.stderr)
     url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}"
-    print(f"rie: serving {url}", flush=True)
+    app = create_app(cfg)
     if args.open and shutil.which("xdg-open"):
-        subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    uvicorn.run(create_app(cfg), host=host, port=port, log_level="warning")
+
+        def open_browser() -> None:
+            # Only once the server answers, so the browser never finds nothing there.
+            if wait_for_port("127.0.0.1" if host == "0.0.0.0" else host, port):
+                subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        threading.Thread(target=open_browser, name="rie-open-browser", daemon=True).start()
+    print(f"rie: serving {url}; keep this running while you cull, Ctrl+C stops it", flush=True)
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning", timeout_graceful_shutdown=3))
+    app.state.server = server  # the event stream ends itself when the server is stopping (see rie.api.app)
+    with contextlib.suppress(KeyboardInterrupt):  # uvicorn re-raises Ctrl+C after a clean shutdown
+        server.run()
+    print("rie: stopped", flush=True)
     return 0
 
 

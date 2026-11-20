@@ -116,3 +116,20 @@ def test_real_nef_previews(tmp_path, cfg):
     assert {row["width"], row["height"]} == {6000, 4000}
     data = previews.full_size(shoot / nef.name, "raw", catalog.loads(row["previews"]), row["orientation"])
     assert previews.jpeg_size(data) == (6000, 4000)
+
+
+def test_two_writers_of_the_same_preview_both_succeed(tmp_path, cfg):
+    """The preview step and a page asking for the same thumbnail can make it at the same time."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    other, full = jpeg_bytes((300, 200)), jpeg_bytes((600, 400))
+    ranges = fake_nef(tmp_path / "DSC_0001.NEF", other, full)
+    with ThreadPoolExecutor(8) as pool:
+        results = list(
+            pool.map(
+                lambda i: previews.make_previews(i, tmp_path / "DSC_0001.NEF", "raw", ranges, 1, "q1:same", cfg),
+                range(16),
+            )
+        )
+    assert [r.error for r in results] == [None] * 16
+    assert not [p.name for p in previews.cache_dir(cfg, "q1:same").iterdir() if p.name.endswith(".tmp")]

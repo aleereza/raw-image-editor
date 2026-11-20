@@ -60,7 +60,8 @@ Run in `analysis.workers` processes (3 by default), each photo read once:
 
 FastAPI serves the API and a Svelte 5 app (built once with `npm run build` in `web/`).
 
-- **Folders:** recently opened folders; a field to open another, which runs as a background job with progress; the photo drive's state, the trash's size and free space; warnings about anything that empties the trash; a button that restores a folder's rejects.
+- **Folders:** the subfolders of the photos folder (newest name first), each opened with one click, with a path field for anything else; opening runs as a background job with progress. Also the folders opened before, the photo drive's state, the trash's size and free space, warnings about anything that empties the trash, and a button that restores a folder's rejects.
+- **The server:** `rie serve --open` opens the browser once the server answers. `Ctrl+C` stops it within a second even while a page is open, and the page then shows a banner until the server is back. The analysis workers' native log lines (OpenCV, MediaPipe) go to `<cache>/logs/analysis.log`, not the terminal.
 - **Cull:**
   - the three pile tabs with counts;
   - a grid grouped by scene, with bursts collapsed to their best frame and a count;

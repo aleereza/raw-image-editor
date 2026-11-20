@@ -108,6 +108,12 @@ export interface Analysis {
   unmodeled: string[];
 }
 
+export interface Browse {
+  path: string;
+  parent: string | null;
+  folders: { name: string; path: string; folder_id: number | null }[];
+}
+
 export interface Job {
   id: number;
   kind: string;
@@ -120,12 +126,25 @@ export interface Job {
   folder_id: number | null;
 }
 
+// Called with false when a request cannot reach `rie serve` at all, and with true when one gets through.
+let reachable: (ok: boolean) => void = () => undefined;
+export function onReachability(callback: (ok: boolean) => void): void {
+  reachable = callback;
+}
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    reachable(false);
+    throw new Error("cannot reach rie serve: is it still running?");
+  }
+  reachable(true);
   if (!response.ok) {
     let detail = response.statusText;
     try {
@@ -144,6 +163,7 @@ export const api = {
   folder: (id: number) => request<FolderDetail>("GET", `/api/folders/${id}`),
   photos: (id: number) => request<Photo[]>("GET", `/api/folders/${id}/photos`),
   open: (path: string) => request<Job>("POST", "/api/folders/open", { path }),
+  browse: (path?: string) => request<Browse>("GET", `/api/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   analysis: (id: number) => request<Analysis>("GET", `/api/photos/${id}/analysis`),
   decide: (id: number, decision: Decision, reason?: string) =>
     request<{ ok: boolean }>("POST", `/api/photos/${id}/decision`, { decision, reason: reason ?? null }),
