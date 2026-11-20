@@ -14,6 +14,7 @@
     ["Enter", "a photo: loupe; a burst: compare", "back to the grid", "back to the grid"],
     ["C", "a burst: compare", "a burst's frame: compare", "back to where you came from"],
     ["Esc", "show every photo (turns the filter off)", "back to the grid", "back to where you came from"],
+    ["Mouse back", "like Esc; with every photo shown, back to the folders", "like Esc", "like Esc"],
     ["Tab  Shift+Tab", "next / previous filter", "next / previous filter", "next / previous filter, in the loupe"],
     ["P", "a photo: keep; a burst: pick the frame shown", "a photo: keep; a burst's frame: pick it", "pick this frame"],
     ["Shift+P", "a burst: keep the frame shown too", "a burst's frame: keep it too", "keep this one too"],
@@ -115,9 +116,9 @@
           {/each}
         </tbody>
       </table>
-      <p class="muted">A tile is a single photo, or a whole burst. After <kbd>P</kbd> or <kbd>X</kbd> the grid moves to the next tile and the loupe to the next photo; after a pick, the loupe moves to the next tile. Burst compare stays where it is.</p>
-      <p class="muted">Mouse: a click on a burst opens compare; a click on a photo selects it, and a double-click opens the loupe. In compare, a double-click picks a frame.</p>
-      <p class="muted">When you overrule the app on one photo, a quick reason picker appears: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition. It is optional.</p>
+      <p class="muted">A tile is a single photo, or a whole burst. After <kbd>P</kbd> or <kbd>X</kbd> the grid moves to the next tile and the loupe to the next photo, once you answer or skip the question when there is one; after a pick, the loupe moves to the next tile. Burst compare stays where it is.</p>
+      <p class="muted">Mouse: a click on a burst opens compare; a click on a photo selects it, and a double-click opens the loupe. In compare, a double-click picks a frame. The mouse's back button (or the browser's Back, or <kbd>Alt</kbd>+<kbd>←</kbd>) does what <kbd>Esc</kbd> does, one step at a time, and from the grid showing every photo it goes back to the folders.</p>
+      <p class="muted">When you overrule the app on one photo, the bar at the bottom asks why: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition, or Skip. It is optional. The photo stays on screen until you answer, and then the view moves on; any other key skips the question and does its own job.</p>
       <p class="muted">Rejects are only flags until you press Done culling; then they go to the drive's trash, which only you empty.</p>
     {/if}
   </div>
