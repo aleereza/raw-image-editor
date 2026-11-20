@@ -3,8 +3,7 @@
 The rules give each photo a suggestion, a kind and a reason. When a personal model is active, its probability that
 the owner rejects the photo replaces the rules' confidence; where model and rules point different ways, the photo
 is the owner's call. A photo goes to an automatic pile only when its kind is set to automatic on the trust dial and
-the probability is at least 0.8 (reject) or at most 0.2 (keep). Photos the owner rated in RawTherapee go to
-auto-keep: that call is already the owner's.
+the probability is at least 0.8 (reject) or at most 0.2 (keep).
 """
 
 from __future__ import annotations
@@ -40,8 +39,6 @@ def set_trust(conn: sqlite3.Connection, kind: str, mode: str) -> None:
 
 
 def pile_for(decision: str, kind: str, probability: float, modes: dict[str, str]) -> str:
-    if kind == "rated":
-        return "auto_keep"
     if modes.get(kind) != "automatic":
         return "your_call"
     if decision == "reject" and probability >= AUTO_REJECT:
@@ -54,7 +51,7 @@ def pile_for(decision: str, kind: str, probability: float, modes: dict[str, str]
 def folder_inputs(conn: sqlite3.Connection, folder_id: int) -> list[dict]:
     """Everything the rules look at, per photo of the folder."""
     images = conn.execute(
-        "SELECT i.id, i.name, i.meta, d.rating FROM images i LEFT JOIN decisions d ON d.image_id = i.id "
+        "SELECT i.id, i.name, i.meta FROM images i "
         "WHERE i.folder_id = ? AND i.state = 'present' ORDER BY i.capture_time, i.shutter_count, i.name",
         (folder_id,),
     ).fetchall()
@@ -90,7 +87,7 @@ def folder_inputs(conn: sqlite3.Connection, folder_id: int) -> list[dict]:
                 "burst": analyses.get((i, "burst"), {}),
                 "look": analyses.get((i, "look"), {}),
                 "faces": faces[i],
-                "extra": {"rating": r["rating"], "rt_trash": i in trash_flags},
+                "extra": {"rt_trash": i in trash_flags},
             }
         )
     return out
@@ -131,7 +128,7 @@ def sort_folder(conn: sqlite3.Connection, folder_id: int) -> SortStats:
         )
         for item, s, p in zip(inputs, suggestions, probabilities, strict=True):
             decision, kind, reason = s.decision, s.kind, s.reason
-            if active is not None and kind != "rated" and (p >= 0.5) != (decision == "reject"):
+            if active is not None and (p >= 0.5) != (decision == "reject"):
                 # The model disagrees with the rules: the owner decides, told what each thinks.
                 decision = "reject" if p >= 0.5 else "keep"
                 reason = f"your model would {decision} this ({p:.0%} reject); the checks say {s.decision}: {s.reason}"

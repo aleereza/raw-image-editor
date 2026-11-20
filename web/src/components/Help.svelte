@@ -10,7 +10,6 @@
     ["Enter", "grid ↔ loupe"],
     ["Tab", "next pile (Shift+Tab: previous)"],
     ["P X U", "keep / reject / clear your decision (in burst compare, P picks: the rest are rejected; Shift+P keeps more)"],
-    ["1–5, 0", "rating / clear (written to the RawTherapee sidecar)"],
     ["Z", "100% on the eyes or AF point; drag or scroll to move around"],
     ["F", "focus map, faces and AF point"],
     ["C", "burst compare with face strips"],
@@ -38,7 +37,7 @@
         <dt>Auto-reject</dt>
         <dd>Clear technical failures, and near-copies of a better frame in the same burst. At Done culling they go to the drive's trash unless you <b>keep</b> them.</dd>
         <dt>Auto-keep</dt>
-        <dd>Sharp photos that aren't part of a burst, and photos you rated in RawTherapee. They are kept unless you reject them.</dd>
+        <dd>Sharp photos that aren't part of a burst. They are kept unless you reject them.</dd>
       </dl>
       <p class="muted">One burst can be split across the piles; <kbd>C</kbd> shows all of its frames.</p>
 
@@ -55,7 +54,6 @@
           <tr><td><span class="badge reject">shake</span></td><td>the whole frame is blurred in one direction</td></tr>
           <tr><td><span class="badge warn">eyes 2</span></td><td>two people blink, compared with their own other frames in the burst</td></tr>
           <tr><td><span class="badge warn">clip</span></td><td>over 3% of the frame is blown-out highlights</td></tr>
-          <tr><td><span class="badge">★★★</span></td><td>your rating</td></tr>
           <tr><td><span class="badge">best</span></td><td>the app's pick in its burst</td></tr>
           <tr><td><span class="stack">×6</span></td><td>six frames of one burst are in this pile, stacked; the one shown is the best of them</td></tr>
         </tbody>
@@ -63,7 +61,7 @@
       <p class="muted">No focus sign means there wasn't enough detail to measure. Hover over a photo to read the app's reason.</p>
 
       <h3>The bottom bar</h3>
-      <p>The file (<span class="muted">+ JPG</span> when the camera's JPEG is paired with it), your decision and rating, then the app's suggestion, such as <b class="reject">reject</b> <span class="muted">(technical, 92% reject)</span>, and its reason. The kind says why: <b>technical</b> (focus or exposure), <b>duplicates</b> (almost the same as a better frame), <b>eyes</b>, <b>expression</b> (not the burst's best moment, or "best of 7"), <b>composition</b> (a face cut by the edge) or <b>rated</b> (rated in RawTherapee). The percentage is how likely you are to reject it. On the right: the frame's place in its burst and the app's rank for it ("burst #3/7, rank 2"), the exposure, and <span class="badge">RT edits</span> when RawTherapee already has edits for the photo; they are kept.</p>
+      <p>The file (<span class="muted">+ JPG</span> when the camera's JPEG is paired with it), your decision, then the app's suggestion, such as <b class="reject">reject</b> <span class="muted">(technical, 92% reject)</span>, and its reason. The kind says why: <b>technical</b> (focus or exposure), <b>duplicates</b> (almost the same as a better frame), <b>eyes</b>, <b>expression</b> (not the burst's best moment, or "best of 7") or <b>composition</b> (a face cut by the edge). The percentage is how likely you are to reject it. On the right: the frame's place in its burst and the app's rank for it ("burst #3/7, rank 2"), the exposure, and <span class="badge">RT edits</span> when RawTherapee already has edits for the photo; they are kept.</p>
 
       <h3>Focus map <kbd>F</kbd></h3>
       <p>
@@ -87,7 +85,7 @@
           {/each}
         </tbody>
       </table>
-      <p class="muted">When you overrule the app, a quick reason picker appears: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition. It is optional; while it shows, 1–5 answer it instead of rating.</p>
+      <p class="muted">When you overrule the app, a quick reason picker appears: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition. It is optional.</p>
       <p class="muted">Rejects are only flags until you press Done culling; then they go to the drive's trash, which only you empty.</p>
     {/if}
   </div>

@@ -1,6 +1,6 @@
 # Architecture decision records
 
-One file per decision, numbered in order. Each says what was checked, what was found (with the numbers), what was decided, and what it changes in [the implementation plan](../../IMPLEMENTATION_PLAN.md). Phase 0's spikes produced the first six; Phase 1 added the rest.
+One file per decision, numbered in order. Each says what was checked, what was found (with the numbers), what was decided, and what it changes in [the implementation plan](../../IMPLEMENTATION_PLAN.md). Phase 0's spikes produced the first six, Phase 1 the next three; later decisions follow them.
 
 | ADR | Topic | Outcome |
 |---|---|---|
@@ -13,3 +13,4 @@ One file per decision, numbered in order. Each says what was checked, what was f
 | [0007](0007-safe-file-operations.md) | Safe file operations | The freedesktop.org trash implemented in `rie.fileops` instead of send2trash, with an explicit same-device check, no-replace renames, and static and audit-hook tests that only this module changes photo folders. |
 | [0008](0008-analysis-v1.md) | Analysis v1 | Blur per tile from the raw green channel (fine against 2-pixel-blurred gradient energy), faces per ADR 0003, focus verdicts at the eyes or AF point, grouping by time, settings and a cheap colour layout, burst ranking with burst-relative blinks. All thresholds provisional until the golden set exists. |
 | [0009](0009-culling-piles-and-model.md) | Culling: piles and the personal model | Rule-based suggestions by kind, piles gated by the trust dial at 0.8 / 0.2, decisions logged with what the app suggested, Done culling to the drive's trash with restore, and a gradient-boosted personal model that activates only when it agrees with the owner at least as well. |
+| [0010](0010-no-ratings.md) | No ratings | No rating keys, stars or route, nothing written into RawTherapee sidecars, and ratings made in RawTherapee ignored: `rules@2` without the rated keep, a personal model without the rating feature. Sidecar edits are still imported. |

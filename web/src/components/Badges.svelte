@@ -11,7 +11,6 @@
   {#if verdict && verdict !== "unknown"}<span class="badge {focusClass}" title={photo.focus.reason}>{verdict}</span>{/if}
   {#if photo.closed}<span class="badge warn" title="eyes closed">eyes {photo.closed}</span>{/if}
   {#if photo.clip !== null && photo.clip > 0.03}<span class="badge warn" title="clipped highlights">clip</span>{/if}
-  {#if photo.rating}<span class="badge">{"★".repeat(photo.rating)}</span>{/if}
   {#if photo.burst.size > 1 && photo.burst.rank === 1}<span class="badge" title="the app's pick in this burst">best</span>{/if}
 </div>
 

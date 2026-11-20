@@ -85,19 +85,6 @@
     }
   }
 
-  async function rate(photo: Photo, rating: number) {
-    const before = photo.rating;
-    update(photo.id, { rating });
-    try {
-      const result = await api.rate(photo.id, rating);
-      if (result.sidecar === "pending") say("rating saved; it goes into the RawTherapee sidecar when the drive is back");
-      else if (result.sidecar.startsWith("not written")) say(`rating saved, ${result.sidecar}`, 8000);
-    } catch (error) {
-      update(photo.id, { rating: before });
-      say(`not saved: ${(error as Error).message}`);
-    }
-  }
-
   async function pick(photo: Photo, keepOthers: boolean) {
     try {
       const result = await api.pick(photo.id, keepOthers);
@@ -147,9 +134,6 @@
     },
     clear: () => {
       if (current) decide(current, null, false);
-    },
-    rate: (stars) => {
-      if (current) rate(current, stars);
     },
     previous: () => step(-1),
     next: () => step(1),
@@ -225,9 +209,6 @@
     if (action) {
       event.preventDefault();
       action();
-    } else if (/^[0-5]$/.test(key)) {
-      event.preventDefault();
-      act.rate(Number(key));
     }
   }
 
@@ -364,7 +345,6 @@
     <footer>
       <span class="name">{current.name}{current.jpeg ? ` + ${current.jpeg.split(".").pop()}` : ""}</span>
       {#if current.decision}<span class="badge {current.decision}">{current.decision}</span>{/if}
-      {#if current.rating}<span class="badge">{"★".repeat(current.rating)}</span>{/if}
       {#if current.suggestion}
         <span class="suggestion">
           app: <b class={current.suggestion}>{current.suggestion}</b>

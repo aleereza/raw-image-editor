@@ -18,7 +18,6 @@ export interface Photo {
   reason: string | null;
   p: number | null;
   decision: Decision;
-  rating: number | null;
   owner_reason: string | null;
   scene: number | null;
   burst: { id: number | null; size: number; rank: number; position: number; best: number | null; issues: string[] };
@@ -168,8 +167,6 @@ export const api = {
   decide: (id: number, decision: Decision, reason?: string) =>
     request<{ ok: boolean }>("POST", `/api/photos/${id}/decision`, { decision, reason: reason ?? null }),
   reason: (id: number, reason: string) => request<{ ok: boolean }>("POST", `/api/photos/${id}/reason`, { reason }),
-  rate: (id: number, rating: number) =>
-    request<{ ok: boolean; sidecar: string }>("POST", `/api/photos/${id}/rating`, { rating }),
   pick: (id: number, keepOthers: boolean) =>
     request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/pick`, { keep_others: keepOthers }),
   donePreview: (id: number) =>

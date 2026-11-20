@@ -160,10 +160,10 @@ def cmd_open(args: argparse.Namespace, cfg: config.Config) -> int:
     for error in pv.errors[:10]:
         print(f"  preview: {error}", file=sys.stderr)
     sc = result.sidecars
-    if sc is not None and (sc.read or sc.written):
+    if sc is not None and sc.read:
         print(
-            f"RawTherapee sidecars: {sc.imported} imported ({sc.ratings} ratings, {sc.edits} with edits kept as "
-            f"locked), {sc.read - sc.imported} unchanged; {sc.written} waiting ratings written"
+            f"RawTherapee sidecars: {sc.imported} imported ({sc.edits} with edits kept as locked), "
+            f"{sc.read - sc.imported} unchanged"
         )
         for error in sc.errors[:10]:
             print(f"  sidecar: {error}", file=sys.stderr)
