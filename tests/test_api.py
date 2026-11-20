@@ -84,14 +84,14 @@ def test_images_come_from_the_cache_and_the_raw(env):
     assert client.get("/api/photos/99/thumb").status_code == 404
 
 
-def test_decisions_ratings_done_and_restore(env):
+def test_decisions_done_and_restore(env):
     _cfg, _conn, client, shoot, _top = env
     assert client.post("/api/photos/2/decision", json={"decision": "reject", "reason": "blur"}).json() == {"ok": True}
     assert client.post("/api/photos/2/decision", json={"decision": "maybe"}).status_code == 409
-    assert client.post("/api/photos/1/rating", json={"rating": 4}).json() == {"ok": True, "sidecar": "created"}
-    assert (shoot / "DSC_0001.NEF.pp3").read_text() == "[General]\nRank=4\n"
+    assert client.post("/api/photos/1/rating", json={"rating": 4}).status_code in (404, 405)  # no ratings
+    (shoot / "DSC_0001.NEF.pp3").write_text("[General]\nRank=0\n")  # RawTherapee's sidecar for the photo
     preview = client.get("/api/folders/1/done").json()
-    assert (preview["rejects"], preview["files"]) == (2, 3)  # the auto-rejected photo with its new sidecar
+    assert (preview["rejects"], preview["files"]) == (2, 3)  # the auto-rejected photo with its sidecar
     result = client.post("/api/folders/1/done").json()
     assert (result["trashed"], result["files"]) == (2, 3)
     assert sorted(p.name for p in shoot.iterdir()) == []

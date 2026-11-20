@@ -16,7 +16,6 @@ export interface CullActions {
   keepToo: () => void; // in burst compare: keep this frame as well
   reject: () => void;
   clear: () => void;
-  rate: (stars: number) => void;
   previous: () => void;
   next: () => void;
   up: () => void;

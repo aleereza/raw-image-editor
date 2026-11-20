@@ -46,26 +46,6 @@
   </section>
 
   <section>
-    <h3>Rating</h3>
-    <div class="stars">
-      {#each [1, 2, 3, 4, 5] as n}
-        <button
-          class="star"
-          class:lit={(photo?.rating ?? 0) >= n}
-          onclick={run(() => act.rate(n))}
-          disabled={!photo}
-          title="{n} {n === 1 ? 'star' : 'stars'} (key {n})"
-          aria-label="{n} {n === 1 ? 'star' : 'stars'}">★</button
-        >
-      {/each}
-      <button class="clear" onclick={run(() => act.rate(0))} disabled={!photo?.rating} title="Clear the rating (key 0)">
-        Clear
-      </button>
-    </div>
-    <p class="note">Keys 1–5, 0 clears. Written to the photo's RawTherapee sidecar.</p>
-  </section>
-
-  <section>
     <h3>Burst</h3>
     <button class:on={compare} onclick={run(act.compare)} disabled={!photo}>
       <span>{compare ? "Back to the loupe" : "Compare its frames"}</span><kbd>C</kbd>
@@ -121,9 +101,5 @@
   .note { margin: 0; font-size: 12px; color: var(--muted); }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
   .pair button { background: var(--bg); padding: 5px 6px; }
-  .stars { display: flex; gap: 3px; align-items: center; }
-  .star { padding: 1px 4px; font-size: 16px; line-height: 1.3; color: var(--muted); background: var(--bg); }
-  .star.lit { color: var(--warn); }
-  .clear { margin-left: auto; padding: 3px 7px; font-size: 12px; background: var(--bg); }
   .hide { padding: 2px 8px; font-size: 12px; }
 </style>

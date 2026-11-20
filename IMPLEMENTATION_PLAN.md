@@ -218,11 +218,11 @@ rawtherapee-cli -q -Y -o out/ -p profiles/d7100-base.pp3 -p cache/IMG_1234.agent
 - If the drive isn't connected, the app says so instead of showing an empty folder. You can still browse and cull from the cached 2048 px previews. Anything that needs the RAW files (100% zoom, renders, exports) waits until the drive is back.
 - NTFS doesn't reliably keep Unix read-only permissions, so the app itself guarantees it never opens an original for writing.
 
-**RawTherapee GUI round-trip.** The managed `IMG_xxxx.NEF.pp3` next to each original holds the complete profile, so opening the folder in RawTherapee shows exactly what the app renders. If you edit a photo there, the app notices the changed sidecar and imports the changed values as your locked parameters. Keys the app doesn't model are kept as they are. Ratings are mirrored into the profile (`[General] Rank`), so RawTherapee's file browser shows them too.
+**RawTherapee GUI round-trip.** The managed `IMG_xxxx.NEF.pp3` next to each original holds the complete profile, so opening the folder in RawTherapee shows exactly what the app renders. If you edit a photo there, the app notices the changed sidecar and imports the changed values as your locked parameters. Keys the app doesn't model are kept as they are. The app has no ratings: it neither writes nor reads `[General] Rank` (ADR 0010).
 
 **Your existing RawTherapee edits are kept.**
 - Many photos already have a sidecar with your ratings and edits; Phase 0 found 4,205 on the drive.
-- The app reads them. Ratings become your ratings, and every value that differs from RawTherapee's defaults (exposure, white balance, crop and so on) becomes one of your locked parameters. The agents only fill in what you left at the default.
+- The app reads them. It ignores their ratings (ADR 0010); every value that differs from RawTherapee's defaults (exposure, white balance, crop and so on) becomes one of your locked parameters. The agents only fill in what you left at the default.
 - Before the app first adds anything to an existing sidecar, it saves a copy in its data folder. It never removes or changes your keys.
 - These sidecars also serve as reference edits for testing the agents (§9).
 
@@ -558,7 +558,7 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 | ← → | previous / next frame | `\` | before / after |
 | ↑ ↓ | previous / next burst | `[` `]` | exposure −/+ 0.15 EV |
 | P X U | keep / reject / unflag | `,` `.` | cooler / warmer |
-| 1–5, 0 | rating / clear | `{` `}` | rotate −/+ 0.1° |
+| 1–5 | quick reason, when the picker shows | `{` `}` | rotate −/+ 0.1° |
 | Z | 100% on eyes / AF point | R | reset parameter to as-shot |
 | F | focus heatmap | L | lock parameter |
 | C | burst compare | E | open in RawTherapee |
@@ -724,15 +724,14 @@ Built on branch `claude/phase-1-culling` and waiting for your review and a first
 - Catalog and migrations; `rie open <folder>` (scan, RAW+JPEG pairing, re-linking by content hash); external-drive detection; exiftool batch.
 - Geeqie-fast viewing: embedded JPEGs extracted and screen-size copies cached when a folder opens; the browser prefetches neighbors.
 - Grouping; focus inspector v1; faces, eyes and smiles; burst ranking v1.
-- Existing RawTherapee sidecars: ratings and edits imported as yours.
+- Existing RawTherapee sidecars: edits imported as yours (their ratings are ignored, ADR 0010).
 - Decision logging from the first folder, with the optional reason picker.
 - The three piles and the trust dial: technical failures and clearly worse duplicates automatic, everything else suggested. A first personal model that learns from your decisions, starting with the first folder.
 - Safe file operations (§3.5): trash-only removal with the same-drive check, restore, the trash-size warning, and tests that forbid hard deletes.
 - UI:
   - folders, the three pile tabs, the cull grid, and the loupe with 100% zoom;
   - the focus heatmap, and burst compare with face strips (picking a frame rejects the rest);
-  - the keyboard map, and "Done culling" (rejects to the system trash);
-  - ratings mirrored to RawTherapee.
+  - the keyboard map, and "Done culling" (rejects to the system trash).
 - **Exit:**
   - a real 300-frame shoot is culled end to end in the app, noticeably faster than in Geeqie;
   - at least 30% of the photos are decided automatically, and you change fewer than 5% of those;
@@ -812,7 +811,7 @@ Built on branch `claude/phase-1-culling` and waiting for your review and a first
 | 2 | Bursts | Sometimes | v0.2 | §4.4 |
 | 3 | Look | Natural and accurate as the starting point, with your own looks on top (row 22) | v0.2 | §4.6–§4.8, §4.12 |
 | 4 | Render engine | RawTherapee (D1) | v0.2 | §3.2 |
-| 5 | Existing edits | Your existing RawTherapee ratings and edits are kept as your locked edits (changed in v0.4) | v0.4 | §3.3 |
+| 5 | Existing edits | Your existing RawTherapee edits are kept as your locked edits (changed in v0.4); their ratings are ignored (ADR 0010) | v0.4 | §3.3 |
 | 6 | Lenses | AF-S DX 35mm f/1.8G mostly, Tokina 100mm f/2.8 Macro sometimes; both in lensfun, neither with VR | v0.2 | §4.3, §4.9 |
 | 7 | UI | Browser tab (D3) | v0.2 | §6 |
 | 8 | Licensing | Personal use only | v0.2 | §7 |
@@ -830,6 +829,7 @@ Built on branch `claude/phase-1-culling` and waiting for your review and a first
 | 20 | Safety | No hard deletes anywhere; the trash stays on the drive and only you empty it; re-exports trash the old JPEG | v0.5 | §3.5 |
 | 21 | Photo history | Not used for learning; the culling model learns from new folders, and old manual WB picks only test the WB agent | v0.5 | §4.6, §4.11 |
 | 22 | Looks | You build named looks for different scenarios in the look lab; neutral until then | v0.5 | §4.12 |
+| 23 | Ratings | None: the app neither rates photos nor reads RawTherapee's ratings | ADR 0010 | §3.3, §6 |
 
 **Still open:** nothing blocking. Backups wait for the NAS: once it's there, the app can copy each finished folder to it and verify the copy.
 

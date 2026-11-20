@@ -49,7 +49,6 @@ FEATURES = (
     "focal_length",
     "fnumber",
     "flash",
-    "rating",
     "rt_trash",
     *(f"verdict_{v}" for v in VERDICTS),
 )
@@ -99,6 +98,23 @@ def _active(conn: sqlite3.Connection) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM cull_models WHERE active = 1 ORDER BY id DESC LIMIT 1").fetchone()
 
 
+class OutdatedModel(ValueError):
+    """A stored version trained on features the app no longer computes."""
+
+
+def current(row: sqlite3.Row) -> bool:
+    """Whether a stored version was trained on today's features.
+
+    A version trained before ADR 0010 also used the photo's rating. It is set aside: the rules sort until the next
+    Done culling trains a new version, and it can't be rolled back to.
+    """
+    return catalog.loads(row["info"], {}).get("features") == list(FEATURES)
+
+
+def usable(row: sqlite3.Row) -> bool:
+    return current(row) and Path(row["path"]).is_file()
+
+
 _loaded: dict[str, Any] = {}
 
 
@@ -111,7 +127,7 @@ def load(path: str) -> Any:
 
 def active_model(conn: sqlite3.Connection) -> tuple[str, Any] | None:
     row = _active(conn)
-    if row is None or not Path(row["path"]).is_file():
+    if row is None or not usable(row):
         return None
     return f"model:{row['id']}", load(row["path"])
 
@@ -156,7 +172,7 @@ def train(conn: sqlite3.Connection, cfg: Config) -> TrainResult:
     baseline = float(np.mean(suggested[replay] == finals))
     previous_row = _active(conn)
     previous = None
-    if previous_row is not None and Path(previous_row["path"]).is_file():
+    if previous_row is not None and usable(previous_row):
         old = load(previous_row["path"])
         previous = float(np.mean((old.predict_proba(x[replay])[:, 1] >= 0.5) == finals))
 
@@ -188,8 +204,11 @@ def train(conn: sqlite3.Connection, cfg: Config) -> TrainResult:
 
 def rollback(conn: sqlite3.Connection, model_id: int) -> None:
     """Make an earlier model version the active one."""
-    if conn.execute("SELECT 1 FROM cull_models WHERE id = ?", (model_id,)).fetchone() is None:
+    row = conn.execute("SELECT * FROM cull_models WHERE id = ?", (model_id,)).fetchone()
+    if row is None:
         raise ValueError(f"no model version {model_id}")
+    if not current(row):
+        raise OutdatedModel(f"model version {model_id} was trained on features the app no longer uses")
     with catalog.transaction(conn):
         conn.execute("UPDATE cull_models SET active = 0")
         conn.execute("UPDATE cull_models SET active = 1 WHERE id = ?", (model_id,))

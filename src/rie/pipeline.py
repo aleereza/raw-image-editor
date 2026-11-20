@@ -161,7 +161,6 @@ def open_folder(
         on_folder(summary.folder_id)
     names = files.list_folder(summary.path).sidecars
     sidecar_stats = sidecars.import_sidecars(conn, summary.folder_id, summary.path, names)
-    sidecar_stats.written = sidecars.flush_pending(conn, cfg, summary.folder_id)
     run_grouping(conn, summary.folder_id)
     sort_folder(conn, summary.folder_id)
     progress("sorted", 0, 0)

@@ -1,4 +1,4 @@
-"""The owner's culling actions: decisions, ratings, burst picks, Done culling, restore, and what they teach.
+"""The owner's culling actions: decisions, burst picks, Done culling, restore, and what they teach.
 
 Every action is written to `decision_log` with the pile and suggestion the photo had at that moment. Until Done
 culling, a reject is only a flag. Done culling then moves each rejected photo's files (the raw, its paired camera
@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from .. import catalog, drive, fileops, locations, sidecars
+from .. import catalog, drive, fileops, locations
 from ..config import Config
 from . import KINDS
 from . import model as model_mod
@@ -80,21 +80,6 @@ def set_reason(conn: sqlite3.Connection, image_id: int, reason: str) -> None:
     with catalog.transaction(conn):
         conn.execute("UPDATE decisions SET reason = ? WHERE image_id = ?", (reason, image_id))
         _log(conn, image, "reason", reason, reason)
-
-
-def set_rating(conn: sqlite3.Connection, cfg: Config, image_id: int, rating: int) -> str:
-    """Rate 0-5 (0 clears); mirrored into the RawTherapee sidecar. Returns how the sidecar was handled."""
-    if not 0 <= rating <= 5:
-        raise CullError("ratings are 0-5")
-    image = _photo(conn, image_id)
-    with catalog.transaction(conn):
-        conn.execute(
-            "INSERT INTO decisions (image_id, rating, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT (image_id) DO UPDATE SET rating = excluded.rating, updated_at = excluded.updated_at",
-            (image_id, rating, catalog.now()),
-        )
-        _log(conn, image, "rating", str(rating), None)
-    return sidecars.write_rank(conn, cfg, image_id, rating)
 
 
 def pick(conn: sqlite3.Connection, image_id: int, *, keep_others: bool = False) -> list[int]:

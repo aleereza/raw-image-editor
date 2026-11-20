@@ -20,8 +20,8 @@ def test_rules_in_order():
     assert rules.suggest({}, SHARP, single, {"luma": 0.01, "clip_low": 0.95}, [], {}).reason == "almost black frame"
     keep = rules.suggest({}, SHARP, single, LOOK, [], {})
     assert (keep.decision, keep.kind, keep.reject_probability) == ("keep", "technical", 0.1)
-    rated = rules.suggest({}, SOFT, single, LOOK, [], {"rating": 3})
-    assert (rated.decision, rated.kind) == ("keep", "rated")
+    rated = rules.suggest({}, SOFT, single, LOOK, [], {"rating": 3})  # the app ignores ratings (ADR 0010)
+    assert (rated.decision, rated.kind) == ("reject", "technical") and "rating" not in rated.features
 
     burst = {"size": 3, "rank": 2, "gap": 0.2, "position": 1, "issues": ["70% as sharp as the sharpest frame"]}
     frames = {10: (2, 1), 11: (1, 2), 12: (3, 3)}
@@ -46,7 +46,6 @@ def test_piles_follow_the_trust_dial():
     assert piles.pile_for("reject", "technical", 0.7, modes) == "your_call"  # not sure enough
     assert piles.pile_for("reject", "eyes", 0.99, modes) == "your_call"  # eyes are on suggest
     assert piles.pile_for("keep", "technical", 0.1, modes) == "auto_keep"
-    assert piles.pile_for("keep", "rated", 0.5, {}) == "auto_keep"
 
 
 # --- a folder in the catalog ---------------------------------------------------------------------------------------
@@ -242,3 +241,22 @@ def test_the_model_learns_and_activates_when_it_agrees_better(tmp_path):
     model_mod.rollback(conn, first)
     assert model_mod.active_model(conn)[0] == f"model:{first}"  # type: ignore[index]
     assert Path(conn.execute("SELECT path FROM cull_models WHERE id = ?", (first,)).fetchone()[0]).is_file()
+
+
+def test_a_model_trained_on_older_features_is_set_aside(tmp_path):
+    cfg = config.parse({"paths": {"data": str(tmp_path)}})
+    conn = catalog.connect(cfg.catalog_path)
+    add_outcomes(conn, 1, 90, "2026-01-01")
+    result = model_mod.train(conn, cfg)
+    assert result.promoted and result.model_id is not None
+    # A version from before ADR 0010 also used the rating.
+    info = json.loads(conn.execute("SELECT info FROM cull_models WHERE id = ?", (result.model_id,)).fetchone()[0])
+    info["features"] = [*model_mod.FEATURES[:25], "rating", *model_mod.FEATURES[25:]]
+    conn.execute("UPDATE cull_models SET info = ? WHERE id = ?", (json.dumps(info), result.model_id))
+    assert model_mod.active_model(conn) is None  # the rules sort until the next Done culling
+    with pytest.raises(model_mod.OutdatedModel):
+        model_mod.rollback(conn, result.model_id)
+    add_outcomes(conn, 2, 90, "2026-02-01")
+    retrained = model_mod.train(conn, cfg)
+    assert retrained.promoted and retrained.previous is None  # the outdated version isn't compared
+    assert model_mod.active_model(conn)[0] == f"model:{retrained.model_id}"  # type: ignore[index]

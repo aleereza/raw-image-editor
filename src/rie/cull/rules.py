@@ -1,17 +1,18 @@
-"""The rule-based sort (`rules@1`): a suggestion, kind, confidence and reason per photo, from the local checks.
+"""The rule-based sort (`rules@2`): a suggestion, kind, confidence and reason per photo, from the local checks.
 
 In order of precedence:
 
-1. A photo the owner rated in RawTherapee is a keep (the owner's own call).
-2. Technical failures: an almost black or mostly blown frame, a clearly soft, shaken or motion-blurred subject, or
+1. Technical failures: an almost black or mostly blown frame, a clearly soft, shaken or motion-blurred subject, or
    a clearly missed focus.
-3. A near-duplicate of a better frame of its burst (duplicates).
-4. Closed eyes where another frame of the burst has fewer (eyes).
-5. Any other frame of a burst that is not its best (expression and moment).
-6. A face cut by the frame edge (composition), as a suggestion only.
-7. Everything else is a keep: the best frame of a burst (expression) or a good single shot (technical).
+2. A near-duplicate of a better frame of its burst (duplicates).
+3. Closed eyes where another frame of the burst has fewer (eyes).
+4. Any other frame of a burst that is not its best (expression and moment).
+5. A face cut by the frame edge (composition), as a suggestion only.
+6. Everything else is a keep: the best frame of a burst (expression) or a good single shot (technical).
 
 The thresholds come from ADR 0008 and are provisional; the personal model learns the owner's own weighting.
+`rules@2` is `rules@1` without its first rule, which kept photos rated in RawTherapee: the app ignores ratings
+(ADR 0010).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from typing import Any
 
 from ..analysis import focus
 
-MODEL = "rules@1"
+MODEL = "rules@2"
 
 
 @dataclass
@@ -75,7 +76,6 @@ def features(meta: dict, focus_result: dict, burst: dict, look: dict, faces: lis
         "focal_length": _num(meta.get("focal_length")),
         "fnumber": _num(meta.get("fnumber")),
         "flash": float(bool(meta.get("flash_fired"))),
-        "rating": _num(extra.get("rating")),
         "rt_trash": float(bool(extra.get("rt_trash"))),
     }
     verdict = focus_result.get("verdict", "unknown")
@@ -95,10 +95,6 @@ def suggest(
 ) -> Suggestion:
     """The rules' suggestion for one photo. `burst_frames` maps the burst's photos to (rank, position)."""
     f = features(meta, focus_result, burst, look, faces, extra)
-    rating = extra.get("rating")
-    if isinstance(rating, int) and rating >= 1:
-        return Suggestion("keep", "rated", 0.95, f"rated {rating}★ in RawTherapee", f)
-
     verdict = focus_result.get("verdict", "unknown")
     blur = focus_result.get("subject_blur")
     background = focus_result.get("background_blur")

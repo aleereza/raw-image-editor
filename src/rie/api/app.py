@@ -1,7 +1,7 @@
 """FastAPI routes for the culling UI (plan §6), served by `rie serve` on localhost.
 
 Previews come from the cache and work while the drive is away; anything that needs the photo files (100% zoom,
-face crops, Done culling, restore, ratings into sidecars) reports the drive's state instead of waiting on it.
+face crops, Done culling, restore) reports the drive's state instead of waiting on it.
 """
 
 from __future__ import annotations
@@ -41,10 +41,6 @@ class OpenRequest(BaseModel):
 class DecisionRequest(BaseModel):
     decision: str | None
     reason: str | None = None
-
-
-class RatingRequest(BaseModel):
-    rating: int
 
 
 class PickRequest(BaseModel):
@@ -270,7 +266,7 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
     def photos(folder_id: int, conn: sqlite3.Connection = Depends(db)) -> list[dict[str, Any]]:
         rows = conn.execute(
             "SELECT i.id, i.name, i.jpeg_name, i.capture_time, i.state, i.width, i.height, i.quick_hash, i.meta, "
-            "s.pile, s.decision AS suggestion, s.kind, s.reason, s.probability, d.decision, d.rating, d.reason "
+            "s.pile, s.decision AS suggestion, s.kind, s.reason, s.probability, d.decision, d.reason "
             "AS owner_reason, fo.result AS focus, bu.result AS burst, lo.result AS look, sc.unmodeled, "
             "(SELECT m.group_id FROM group_members m JOIN groups g ON g.id = m.group_id "
             " WHERE g.kind = 'scene' AND m.image_id = i.id) AS scene_id, "
@@ -318,7 +314,6 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
                     "reason": r["reason"],
                     "p": r["probability"],
                     "decision": r["decision"],
-                    "rating": r["rating"],
                     "owner_reason": r["owner_reason"],
                     "scene": r["scene_id"],
                     "burst": {
@@ -480,16 +475,6 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
             raise fail(exc) from exc
         return {"ok": True}
 
-    @app.post("/api/photos/{image_id}/rating")
-    def rating(image_id: int, request: RatingRequest, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
-        try:
-            sidecar = actions.set_rating(conn, cfg, image_id, request.rating)
-        except actions.CullError as exc:
-            raise fail(exc) from exc
-        except Exception as exc:  # the rating is saved; only the sidecar write failed
-            return {"ok": True, "sidecar": f"not written: {exc}"}
-        return {"ok": True, "sidecar": sidecar}
-
     @app.post("/api/photos/{image_id}/pick")
     def pick(image_id: int, request: PickRequest, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
         try:
@@ -565,6 +550,8 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
     def activate(model_id: int, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
         try:
             model_mod.rollback(conn, model_id)
+        except model_mod.OutdatedModel as exc:
+            raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(404, str(exc)) from exc
         for (folder_id,) in conn.execute("SELECT id FROM folders WHERE culled_at IS NULL").fetchall():
