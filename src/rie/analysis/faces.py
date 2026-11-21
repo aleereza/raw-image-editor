@@ -7,6 +7,13 @@
   640 px; when YuNet still finds nothing on a long lens, the landmarker's own detector gets a try.
 - The landmarker runs once per face on a square crop (1.8 times the face, 384 px) and gives the blink and smile
   blendshapes, the head pose, and the iris positions used to measure sharpness at the eyes.
+- That crop can show someone else's face first, so a face counts for a box only when its irises lie inside the box
+  (ADR 0012). A box beside another face, such as hands or a toy under a child's chin, gets nothing. When the face
+  found first belongs to a neighbour, a second look that may find up to three faces takes the one inside the box,
+  so an adult cheek to cheek with a child keeps their own eyes. A box where the first look finds no face gets no
+  second look: allowed several answers, the landmarker also finds faces in feet and pumpkins.
+- Two boxes that read the same face (the same irises): the one whose own eye points sit farther from it looks again
+  for a face of its own, and is dropped when it has none (a close-up boxed twice).
 
 Only geometry and expression scores are kept. Nothing about who a person is is computed.
 """
@@ -14,6 +21,7 @@ Only geometry and expression scores are kept. Nothing about who a person is is c
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -31,7 +39,10 @@ WHOLE_EDGE, TILED_EDGE, CLOSEUP_EDGE = 1600, 3000, 640
 TILE, OVERLAP = 1280, 320
 CROP_GROW, CROP_SIZE = 1.8, 384
 LONG_LENS_MM = 85.0
-VERSION = "faces@1"
+CROP_FACES = 3  # faces the second look may find in one crop (ADR 0012)
+EYES_INSIDE = 1.15  # a found face belongs to a box when both irises lie inside the box grown by this factor
+SAME_FACE = 0.25  # two boxes read one face when their irises are closer than this share of the eye distance
+VERSION = "faces@2"
 # MediaPipe face mesh: iris centres (refined landmarks), one per eye.
 IRIS = (468, 473)
 
@@ -71,7 +82,7 @@ def models_available(models: Path = MODELS) -> bool:
 
 
 class FaceAnalyzer:
-    """Holds both models; create one per process and reuse it (MediaPipe takes about 250 MB)."""
+    """Holds the models; create one per process and reuse it (MediaPipe takes about 250 MB, the second look 40 MB)."""
 
     def __init__(self, models: Path = MODELS) -> None:
         if not models_available(models):
@@ -80,15 +91,20 @@ class FaceAnalyzer:
         from mediapipe.tasks.python import vision
 
         self._detector = cv2.FaceDetectorYN.create(str(models / YUNET), "", (320, 320), SCORE, NMS, 5000)
-        options = vision.FaceLandmarkerOptions(
-            base_options=mp_tasks.BaseOptions(model_asset_path=str(models / LANDMARKER)),
-            running_mode=vision.RunningMode.IMAGE,
-            num_faces=1,
-            min_face_detection_confidence=0.3,
-            output_face_blendshapes=True,
-            output_facial_transformation_matrixes=True,
-        )
-        self._landmarker = vision.FaceLandmarker.create_from_options(options)
+
+        def landmarker(faces: int) -> Any:
+            options = vision.FaceLandmarkerOptions(
+                base_options=mp_tasks.BaseOptions(model_asset_path=str(models / LANDMARKER)),
+                running_mode=vision.RunningMode.IMAGE,
+                num_faces=faces,
+                min_face_detection_confidence=0.3,
+                output_face_blendshapes=True,
+                output_facial_transformation_matrixes=True,
+            )
+            return vision.FaceLandmarker.create_from_options(options)
+
+        self._landmarker = landmarker(1)
+        self._second_look = landmarker(CROP_FACES)
 
     # -- detection --------------------------------------------------------------------------------------------
 
@@ -123,7 +139,13 @@ class FaceAnalyzer:
 
     # -- landmarks ----------------------------------------------------------------------------------------------
 
-    def _landmarks(self, img: np.ndarray, face: Face) -> None:
+    def _landmarks(self, img: np.ndarray, face: Face, taken: Face | None = None) -> bool:
+        """Read the face in a box (blink, smile, head pose, irises); whether the box got a face of its own.
+
+        The first look finds one face in the crop, as ever. Only when that face lies outside the box (a neighbour's)
+        does a second look find up to three and take the one inside the box. `taken` is a face another box has
+        already read: then only the second look runs, and it skips that face.
+        """
         import mediapipe as mp
 
         h, w = img.shape[:2]
@@ -135,31 +157,62 @@ class FaceAnalyzer:
         padded = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_CONSTANT) if pad else img
         crop = padded[y0 + pad : y1 + pad, x0 + pad : x1 + pad]
         if crop.size == 0:
-            return
+            return False
         interpolation = cv2.INTER_AREA if side > CROP_SIZE else cv2.INTER_CUBIC
         crop = cv2.resize(crop, (CROP_SIZE, CROP_SIZE), interpolation=interpolation)
         rgb = np.ascontiguousarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-        result = self._landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
-        if not result.face_blendshapes:
-            return
-        scores = {c.category_name: c.score for c in result.face_blendshapes[0]}
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+        def irises(result: Any) -> list[list[tuple[float, float]]]:
+            return [
+                [((x0 + points[i].x * side) / w, (y0 + points[i].y * side) / h) for i in IRIS if i < len(points)]
+                for points in result.face_landmarks
+            ]
+
+        result, found, k = None, [], None
+        if taken is None:
+            result = self._landmarker.detect(image)
+            if not result.face_landmarks:
+                return False
+            found = irises(result)
+            k = matching_face(face, found, (w, h))
+        if k is None:
+            result = self._second_look.detect(image)
+            found = irises(result)
+            if taken is not None:
+                found = [[] if same_eyes(eyes, taken.eyes, (w, h)) else eyes for eyes in found]
+            k = matching_face(face, found, (w, h))
+        if result is None or k is None or k >= len(result.face_blendshapes):
+            return False
+        scores = {c.category_name: c.score for c in result.face_blendshapes[k]}
         face.confirmed = True
         face.blink_l = round(float(scores.get("eyeBlinkLeft", 0.0)), 3)
         face.blink_r = round(float(scores.get("eyeBlinkRight", 0.0)), 3)
         face.smile = round(
             (float(scores.get("mouthSmileLeft", 0.0)) + float(scores.get("mouthSmileRight", 0.0))) / 2, 3
         )
-        if result.facial_transformation_matrixes:
-            yaw, pitch, roll = euler_degrees(np.asarray(result.facial_transformation_matrixes[0]))
+        face.yaw = face.pitch = face.roll = None
+        if k < len(result.facial_transformation_matrixes):
+            yaw, pitch, roll = euler_degrees(np.asarray(result.facial_transformation_matrixes[k]))
             face.yaw, face.pitch, face.roll = round(yaw, 1), round(pitch, 1), round(roll, 1)
-        points = result.face_landmarks[0]
-        eyes = []
-        for index in IRIS:
-            if index < len(points):
-                px = (x0 + points[index].x * side) / w
-                py = (y0 + points[index].y * side) / h
-                eyes.append([round(px, 4), round(py, 4)])
-        face.eyes = eyes
+        face.eyes = [[round(px, 4), round(py, 4)] for px, py in found[k]]
+        return True
+
+    def _one_per_face(self, img: np.ndarray, faces: list[Face]) -> list[Face]:
+        """One box per face: of two boxes that read the same face, the one whose own eye points sit farther from it
+        looks again for a face of its own (an adult beside the child they hold); with none, it is a second box on the
+        same face (a close-up boxed twice) and is dropped."""
+        size = (img.shape[1], img.shape[0])
+        dropped: set[int] = set()
+        confirmed = [f for f in faces if f.confirmed]
+        for i, a in enumerate(confirmed):
+            for b in confirmed[i + 1 :]:
+                if id(a) in dropped or id(b) in dropped or not same_face(a, b, size):
+                    continue
+                second = second_reader(a, b, size)
+                if not self._landmarks(img, second, taken=b if second is a else a):
+                    dropped.add(id(second))
+        return [f for f in faces if id(f) not in dropped]
 
     def _landmarker_detect(self, img: np.ndarray) -> list[Face]:
         """The landmarker's own detector on the whole frame, for close-ups YuNet misses."""
@@ -198,11 +251,12 @@ class FaceAnalyzer:
             faces = _merge(faces, closeup)
         for face in faces:
             self._landmarks(img, face)
+        faces = self._one_per_face(img, faces)
         if len(faces) >= 2:
             tiled = [f for f in to_faces(self._tiled(img), "tiled") if not _overlaps_any(f, faces, 0.3)]
             for face in tiled:
                 self._landmarks(img, face)
-            faces += [f for f in tiled if f.confirmed and not _contained(f, faces)]
+            faces = self._one_per_face(img, faces + [f for f in tiled if f.confirmed and not _contained(f, faces)])
         if not faces and long_lens:
             faces = self._landmarker_detect(img)
             for face in faces:
@@ -263,6 +317,70 @@ def _merge(first: list[Face], second: list[Face]) -> list[Face]:
         if not _overlaps_any(face, merged, 0.3) and not _contained(face, merged):
             merged.append(face)
     return merged
+
+
+def _eye_target(face: Face) -> tuple[float, float]:
+    """Where the detector put the eyes (between its two eye points), else the centre of the box."""
+    marks = face.landmarks
+    if len(marks) >= 4:
+        return (marks[0] + marks[2]) / 2, (marks[1] + marks[3]) / 2
+    x, y, w, h = face.box
+    return x + w / 2, y + h / 2
+
+
+def matching_face(face: Face, found: list[list[tuple[float, float]]], size: tuple[int, int]) -> int | None:
+    """Which of the faces the landmarker found in a box's crop belongs to that box, if any (ADR 0012).
+
+    `found` holds each face's two iris centres, normalized to the upright frame of `size` (width, height) pixels.
+    The crop is 1.8 times the box, so it can hold a neighbour's face: a box on a child's hands sees the child's face
+    above it, and an adult cheek to cheek with a child sees both faces. A face belongs to the box when both irises
+    lie inside the box grown by EYES_INSIDE; of several, the one nearest the detector's own eye points wins.
+    """
+    w, h = size
+    x, y, bw, bh = face.box
+    cx, cy = x + bw / 2, y + bh / 2
+    tx, ty = _eye_target(face)
+    best, best_distance = None, math.inf
+    for k, eyes in enumerate(found):
+        if len(eyes) != 2 or not all(
+            abs(ex - cx) <= bw * EYES_INSIDE / 2 and abs(ey - cy) <= bh * EYES_INSIDE / 2 for ex, ey in eyes
+        ):
+            continue
+        distance = math.hypot(((eyes[0][0] + eyes[1][0]) / 2 - tx) * w, ((eyes[0][1] + eyes[1][1]) / 2 - ty) * h)
+        if distance < best_distance:
+            best, best_distance = k, distance
+    return best
+
+
+def same_eyes(a: Sequence[Sequence[float]], b: Sequence[Sequence[float]], size: tuple[int, int]) -> bool:
+    """Whether two pairs of iris centres are one face's: each lies within SAME_FACE of the eye distance of the other."""
+    if len(a) != 2 or len(b) != 2:
+        return False
+    w, h = size
+
+    def apart(p: Sequence[float], q: Sequence[float]) -> float:
+        return math.hypot((p[0] - q[0]) * w, (p[1] - q[1]) * h)
+
+    span = max(apart(a[0], a[1]), apart(b[0], b[1]))
+    return span > 0 and max(apart(p, q) for p, q in zip(a, b, strict=True)) <= SAME_FACE * span
+
+
+def same_face(a: Face, b: Face, size: tuple[int, int]) -> bool:
+    """Whether two boxes read one face (the same irises)."""
+    return same_eyes(a.eyes, b.eyes, size)
+
+
+def _eye_offset(face: Face, size: tuple[int, int]) -> float:
+    """Pixels between the middle of a face's irises and where its detector put the eyes."""
+    w, h = size
+    tx, ty = _eye_target(face)
+    (lx, ly), (rx, ry) = face.eyes
+    return math.hypot(((lx + rx) / 2 - tx) * w, ((ly + ry) / 2 - ty) * h)
+
+
+def second_reader(a: Face, b: Face, size: tuple[int, int]) -> Face:
+    """Of two boxes that read the same face, the one whose own eye points sit farther from it (then the lower score)."""
+    return max((a, b), key=lambda f: (_eye_offset(f, size), -f.score))
 
 
 def decode_upright(data: bytes, orientation: int, *, reduce: int = 2, apply_exif: bool = False) -> np.ndarray:

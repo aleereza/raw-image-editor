@@ -21,6 +21,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.types import Scope
 
 from .. import catalog, locations, safety
 from ..analysis.faces import models_available
@@ -32,6 +33,19 @@ from .jobs import JobRunner
 
 WEB_DIST = REPO_ROOT / "web" / "dist"
 IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
+# The page, and any other file that keeps its name from one build to the next: the browser checks with the server on
+# each load (an unchanged file costs a 304) instead of guessing how long its copy stays good, so a new build shows at
+# the next reload.
+REVALIDATE = {"Cache-Control": "no-cache"}
+
+
+class WebFiles(StaticFiles):
+    """The built web UI. Vite names the files in assets/ after their content, so those are kept for good."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers.update(IMMUTABLE if Path(path).parts[:1] == ("assets",) else REVALIDATE)
+        return response
 
 
 class OpenRequest(BaseModel):
@@ -596,14 +610,15 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
     if (WEB_DIST / "index.html").is_file():
-        app.mount("/", StaticFiles(directory=WEB_DIST, html=True), name="web")
+        app.mount("/", WebFiles(directory=WEB_DIST, html=True), name="web")
     else:
 
         @app.get("/")
         def no_build() -> HTMLResponse:
             return HTMLResponse(
                 "<h1>Raw Image Editor</h1><p>The web UI is not built yet: run <code>npm install</code> and "
-                "<code>npm run build</code> in <code>web/</code>, then reload. The API is at /api/docs.</p>"
+                "<code>npm run build</code> in <code>web/</code>, then reload. The API is at /api/docs.</p>",
+                headers=REVALIDATE,
             )
 
     return app

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from rie import catalog, config
+from rie.api import app as api_app
 from rie.api.app import create_app
 from rie.cull import actions, piles
 from rie.scan import previews
@@ -66,6 +67,28 @@ def test_status_folders_and_photos(env):
         ("DSC_0002.NEF", "auto_keep", "sharp"),
     ]
     assert client.get("/").status_code == 200
+
+
+def test_a_new_build_shows_at_the_next_reload(tmp_path, monkeypatch):
+    cfg = config.parse({"paths": {"data": str(tmp_path / "data"), "cache": str(tmp_path / "cache")}})
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    monkeypatch.setattr(api_app, "WEB_DIST", dist)
+    page = TestClient(create_app(cfg, start_jobs=False)).get("/")
+    assert "not built yet" in page.text and page.headers["cache-control"] == "no-cache"
+
+    (dist / "assets").mkdir()
+    (dist / "index.html").write_text('<script type="module" src="/assets/index-abc123.js"></script>')
+    (dist / "assets" / "index-abc123.js").write_text("export {};")
+    (dist / "favicon.svg").write_text("<svg/>")
+    client = TestClient(create_app(cfg, start_jobs=False))
+    page = client.get("/")
+    assert page.status_code == 200 and page.headers["cache-control"] == "no-cache"
+    unchanged = client.get("/", headers={"if-none-match": page.headers["etag"]})
+    assert unchanged.status_code == 304 and unchanged.headers["cache-control"] == "no-cache"
+    assert client.get("/favicon.svg").headers["cache-control"] == "no-cache"
+    asset = client.get("/assets/index-abc123.js")
+    assert asset.status_code == 200 and "immutable" in asset.headers["cache-control"]
 
 
 def test_images_come_from_the_cache_and_the_raw(env):

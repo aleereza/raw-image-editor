@@ -40,7 +40,7 @@ Rejected photos are dimmed, whoever rejected them. The mark replaces the decisio
 - `P` on a frame picks it: the frame is kept and every other present frame becomes the owner's reject, including a frame the owner kept before, so `P` on another frame moves the keep. In the grid, `P` on a burst tile picks the frame it shows. `Shift+P` keeps a frame and leaves the others as they are.
 - `X` on a burst tile in the grid rejects every frame, and `U` clears the owner's decision on every frame. In the loupe and in compare, `X` and `U` act on one frame. Whole-burst actions don't show the reason picker.
 - A frame the app already rejects on its own (no owner decision, Auto-reject) keeps the app's call when the owner picks another frame or rejects the whole burst. Its final call is a reject either way, and the share of photos decided automatically stays right.
-- A click on a burst tile opens burst compare; a click on a single photo selects it, and a double-click opens the loupe. In compare, a double-click picks a frame only when both clicks land in compare, so double-clicking a burst tile in the grid never picks whichever frame ends up under the pointer.
+- A click on a tile selects it, a single photo or a burst alike, and a double-click opens it: a single photo in the loupe, a burst in burst compare. (The owner asked for this on 2026-11-20; a click on a burst first opened compare.) In compare, a double-click picks a frame only when both clicks land in compare, so double-clicking a burst tile in the grid never picks whichever frame ends up under the pointer.
 
 ### Keys
 

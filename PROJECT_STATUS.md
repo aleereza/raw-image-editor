@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-20
+Last updated: 2026-11-21
 
 The state of the code. Notes about one installation, such as its photo drive and sample set, belong in the Git-ignored `local/` folder.
 
@@ -30,7 +30,7 @@ Phase 1 ("fast, partly automatic culling", plan §10) is built on the branch `cl
 Run in `analysis.workers` processes (3 by default), each photo read once:
 
 - a blur map from the raw green channel: 32 × 32 tiles of the half-resolution green, fine gradient energy against the same after a 2-pixel blur, minus a noise floor measured in flat tiles, with clipped highlights left out; plus the direction of any directional blur;
-- faces, eyes and smiles per ADR 0003: YuNet at 1600 px, a tiled pass for group shots kept only with landmark confirmation and containment suppression, a 640 px pass for close-ups, and the MediaPipe landmarker per face for blink, smile, head pose and iris positions;
+- faces, eyes and smiles per ADR 0003: YuNet at 1600 px, a tiled pass for group shots kept only with landmark confirmation and containment suppression, a 640 px pass for close-ups, and the MediaPipe landmarker per face for blink, smile, head pose and iris positions; a face counts only when its irises lie inside the box, a second look finds a box's own face when the first face found is a neighbour's, and two boxes never read the same face (ADR 0012);
 - a focus verdict (sharp, soft, missed, motion, shake or unknown) at the eyes of the focused face, else the AF point the camera used, else the sharpest detail, with the background's sharpness, the shutter against the handheld limit, and per-face sharpness;
 - the photo's SHA-256 content hash;
 - then, per folder: scenes and bursts from capture time, lens settings, light and the look descriptor; near-duplicates inside bursts; faces followed through each burst by position; every frame ranked with a one-line reason ("#4 is better: 1 of 3 blinking, 62% as sharp as the sharpest frame").
@@ -55,12 +55,12 @@ Run in `analysis.workers` processes (3 by default), each photo read once:
 FastAPI serves the API and a Svelte 5 app (built once with `npm run build` in `web/`). The top bar names the app, Raw Image Editor, which leads back to the folders, and then the page: Folders or Culling. ADR 0011 describes the culling view.
 
 - **Folders:** the subfolders of the photos folder (newest name first), each opened with one click, with a path field for anything else; opening runs as a background job with progress. Also the folders opened before, the photo drive's state, the trash's size and free space, warnings about anything that empties the trash, and a button that restores a folder's rejects.
-- **The server:** `rie serve --open` opens the browser once the server answers. `Ctrl+C` stops it within a second even while a page is open, and the page then shows a banner until the server is back. The analysis workers' native log lines (OpenCV, MediaPipe) go to `<cache>/logs/analysis.log`, not the terminal.
+- **The server:** `rie serve --open` opens the browser once the server answers. `Ctrl+C` stops it within a second even while a page is open, and the page then shows a banner until the server is back. The analysis workers' native log lines (OpenCV, MediaPipe) go to `<cache>/logs/analysis.log`, not the terminal. The browser checks the page with the server on every load (`Cache-Control: no-cache`, answered with a 304 while it is unchanged) and keeps the built files under `assets/`, which are named after their content, so a new build shows at the next reload.
 - **Cull:**
   - every photo in one grid, grouped by scene, with scene headers that count what's still to decide; a folder opens on the first photo or burst still to decide;
   - three filter chips with counts instead of pile tabs: To decide, Rejected by the app (the Auto-reject pile) and Kept by the app (the Auto-keep pile); `Tab` cycles them and `Esc` turns them off;
   - a mark on every photo for what Done culling will do with it: filled ✓ or ✗ for the owner's decision, outlined for the app's own call, an empty ring while it is open; rejected photos are dimmed;
-  - each burst as one tile with all of its frames: stacked edges, a dot per frame with its mark and the counts ("1 keep · 2 reject"), showing its kept frame, else the app's best, or whichever frame is selected; a click opens burst compare, and on the tile `P` picks the frame shown, `X` rejects every frame and `U` clears every frame;
+  - each burst as one tile with all of its frames: stacked edges, a dot per frame with its mark and the counts ("1 keep · 2 reject"), showing its kept frame, else the app's best, or whichever frame is selected; a click selects it and a double-click opens burst compare, as for a single photo and the loupe, and on the tile `P` picks the frame shown, `X` rejects every frame and `U` clears every frame;
   - a loupe that shows the cached 2048 px copy and prefetches and decodes the five photos on either side;
   - `Z` for 100% on the eyes or AF point (the full-size JPEG is prefetched after 0.3 s on a photo), moved by dragging or scrolling (a mouse wheel or two fingers on a touchpad) and never past the image's edges, and `F` for the focus heatmap with faces, eyes and the AF point;
   - `↑` and `↓` follow the rows on screen across scene breaks, `PgUp` and `PgDn` jump between scenes, and `N` goes to the next photo or burst still to decide;
@@ -153,7 +153,10 @@ Measured on the reference machine (Ryzen 7 3700X, 32 GB) with the 29 sample NEFs
 
 - **Thresholds are provisional:** every focus, grouping, ranking and sorting threshold was set on the 29 Phase 0 samples, not on the golden set (ADR 0008, ADR 0009).
 - **AF points:** the 51-point layout is estimated from Nikon's statement that the points cover the 1.3× crop frame. Its spacing is not measured.
-- **Faces:** the landmarker does not confirm some faces (babies in profile, a 100 mm flash close-up); those have no blink or smile scores and do not count as people in a burst.
+- **Faces:**
+  - The landmarker does not confirm some faces (babies in profile or lying sideways, adults in profile or under a cap, a 100 mm flash close-up); those have no blink or smile scores and do not count as people in a burst.
+  - A false box the landmarker does not confirm (a foot, a toy, decorations) still makes a photo count as a group shot, which starts the tiled pass (ADR 0012).
+  - Faces are followed through a burst by box overlap, so a person who moves more than about half a face width between two frames becomes a new person, in burst compare and in the ranking's "faces hidden" count.
 - **Timings:** all were measured from the internal disk. On the USB hard disk, exiftool took about 39 ms per file in Phase 0, and every photo's analysis reads its whole file (about 30 MB).
 - **Sidecars from earlier builds:** before ADR 0010, rating a photo in the app wrote `[General] Rank` into its sidecar, or created a sidecar holding only the rating. Those files stay as they are, and the RawTherapee GUI's handling of a rating-only sidecar has not been checked by eye.
 - **Renders** (from Phase 0):

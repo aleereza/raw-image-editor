@@ -85,7 +85,7 @@
       <p class="muted">No focus sign means there wasn't enough detail to measure. Hover over a photo to read the app's reason.</p>
 
       <h3>Bursts</h3>
-      <p>A burst's tile shows its kept frame (the app's best of them when several are kept), else the app's best frame, and while you look through it, the frame you selected. Its mark is ✓ once a frame is kept and none is open, ✗ when every frame is rejected, and open otherwise, for example with one frame rejected and two open. In the grid, <kbd>P</kbd> picks the frame shown, <kbd>X</kbd> rejects every frame and <kbd>U</kbd> clears every frame. A click, <kbd>Enter</kbd> or <kbd>C</kbd> opens burst compare.</p>
+      <p>A burst's tile shows its kept frame (the app's best of them when several are kept), else the app's best frame, and while you look through it, the frame you selected. Its mark is ✓ once a frame is kept and none is open, ✗ when every frame is rejected, and open otherwise, for example with one frame rejected and two open. In the grid, <kbd>P</kbd> picks the frame shown, <kbd>X</kbd> rejects every frame and <kbd>U</kbd> clears every frame. A click selects the burst, as it does a single photo; a double-click, <kbd>Enter</kbd> or <kbd>C</kbd> opens burst compare.</p>
 
       <h3>Burst compare <kbd>C</kbd></h3>
       <p>Every frame of the burst side by side, each with its mark and its problems ("eyes closed, 85% as sharp as the sharpest frame"). Below them, one strip per person, followed by where they are in the frame, never by who they are: eyes open or closed, the smile, and the blur at the eyes (lower is sharper).</p>
@@ -117,7 +117,7 @@
         </tbody>
       </table>
       <p class="muted">A tile is a single photo, or a whole burst. After <kbd>P</kbd> or <kbd>X</kbd> the grid moves to the next tile and the loupe to the next photo, once you answer or skip the question when there is one; after a pick, the loupe moves to the next tile. Burst compare stays where it is.</p>
-      <p class="muted">Mouse: a click on a burst opens compare; a click on a photo selects it, and a double-click opens the loupe. In compare, a double-click picks a frame. The mouse's back button (or the browser's Back, or <kbd>Alt</kbd>+<kbd>←</kbd>) does what <kbd>Esc</kbd> does, one step at a time, and from the grid showing every photo it goes back to the folders.</p>
+      <p class="muted">Mouse: a click selects a photo or a burst, and a double-click opens it: a photo in the loupe, a burst in burst compare. In compare, a double-click picks a frame. The mouse's back button (or the browser's Back, or <kbd>Alt</kbd>+<kbd>←</kbd>) does what <kbd>Esc</kbd> does, one step at a time, and from the grid showing every photo it goes back to the folders.</p>
       <p class="muted">When you overrule the app on one photo, the bar at the bottom asks why: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition, or Skip. It is optional. The photo stays on screen until you answer, and then the view moves on; any other key skips the question and does its own job.</p>
       <p class="muted">Rejects are only flags until you press Done culling; then they go to the drive's trash, which only you empty.</p>
     {/if}
