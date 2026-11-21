@@ -101,7 +101,7 @@ export interface Analysis {
     af_box?: [number, number, number, number] | null;
     reason?: string;
   };
-  burst: Record<string, unknown>;
+  burst: Record<string, unknown> & { person_tracks?: number[] };
   look: Record<string, unknown>;
   recipe: { params: Record<string, Record<string, unknown>> } | null;
   unmodeled: string[];

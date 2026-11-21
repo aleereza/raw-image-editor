@@ -209,6 +209,43 @@ def test_tracks_follow_faces_by_position():
     assert tracks == [[0, 1], [1]]
 
 
+def test_a_face_that_moves_less_than_its_size_stays_one_person():
+    # A child moving 0.7 of a face width between frames: the boxes overlap by IoU 0.18, which once meant a new person.
+    before, after = [0.40, 0.30, 0.10, 0.10], [0.47, 0.30, 0.10, 0.10]
+    tracks = burst.track_faces(
+        [burst.FrameInput(1, [person(before)], None), burst.FrameInput(2, [person(after)], None)]
+    )
+    assert tracks == [[0], [0]]
+
+
+def test_neighbours_keep_their_own_tracks_when_both_move():
+    left, right = [0.30, 0.30, 0.10, 0.10], [0.42, 0.30, 0.10, 0.10]
+    moved = [[0.35, 0.30, 0.10, 0.10], [0.47, 0.30, 0.10, 0.10]]
+    first = burst.FrameInput(1, [person(left), person(right)], None)
+    tracks = burst.track_faces([first, burst.FrameInput(2, [person(b) for b in moved], None)])
+    assert tracks == [[0, 1], [0, 1]]
+
+
+def test_a_person_missing_from_a_frame_keeps_their_track():
+    a, b = [0.20, 0.30, 0.10, 0.10], [0.60, 0.30, 0.10, 0.10]
+    frames = [[person(a), person(b)], [person(b)], [person(a), person(b)]]
+    tracks = burst.track_faces([burst.FrameInput(i, faces_, None) for i, faces_ in enumerate(frames)])
+    assert tracks == [[0, 1], [1], [0, 1]]
+
+
+def test_a_small_face_in_the_background_is_not_a_person():
+    # A stranger far behind the child, at a seventh of the child's face width, blinking in the first frame.
+    child, stranger = [0.40, 0.30, 0.21, 0.15], [0.07, 0.29, 0.03, 0.02]
+    ranks = burst.rank_burst(
+        [
+            burst.FrameInput(1, [person(stranger, blink=0.9), person(child, blur=0.3)], 0.3),
+            burst.FrameInput(2, [person(stranger), person(child, blur=0.5)], 0.5),
+        ]
+    )
+    assert all(r.person_tracks == [1] and r.people == 1 for r in ranks)
+    assert [r.rank for r in ranks] == [1, 2] and not ranks[0].closed_eyes
+
+
 # --- faces -----------------------------------------------------------------------------------------------------------
 
 
@@ -373,5 +410,7 @@ def test_open_folder_analyses_and_groups_a_burst_reading_only(tmp_path):
     assert result.analysis is not None and (result.analysis.done, result.analysis.failed) == (2, 0)
     assert result.groups is not None and (result.groups.bursts, result.groups.in_bursts) == (1, 2)
     assert conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0] >= 4
+    results = [catalog.loads(r[0]) for r in conn.execute("SELECT result FROM analyses WHERE kind = 'burst'")]
+    assert results and all(isinstance(r["person_tracks"], list) for r in results)
     hashes = [r[0] for r in conn.execute("SELECT content_hash FROM images")]
     assert all(h and h.startswith("sha256:") for h in hashes)
