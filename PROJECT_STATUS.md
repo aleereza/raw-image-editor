@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-20
+Last updated: 2026-11-21
 
 The state of the code. Notes about one installation, such as its photo drive and sample set, belong in the Git-ignored `local/` folder.
 
@@ -30,7 +30,7 @@ Phase 1 ("fast, partly automatic culling", plan §10) is built on the branch `cl
 Run in `analysis.workers` processes (3 by default), each photo read once:
 
 - a blur map from the raw green channel: 32 × 32 tiles of the half-resolution green, fine gradient energy against the same after a 2-pixel blur, minus a noise floor measured in flat tiles, with clipped highlights left out; plus the direction of any directional blur;
-- faces, eyes and smiles per ADR 0003: YuNet at 1600 px, a tiled pass for group shots kept only with landmark confirmation and containment suppression, a 640 px pass for close-ups, and the MediaPipe landmarker per face for blink, smile, head pose and iris positions;
+- faces, eyes and smiles per ADR 0003: YuNet at 1600 px, a tiled pass for group shots kept only with landmark confirmation and containment suppression, a 640 px pass for close-ups, and the MediaPipe landmarker per face for blink, smile, head pose and iris positions; a face counts only when its irises lie inside the box, a second look finds a box's own face when the first face found is a neighbour's, and two boxes never read the same face (ADR 0012);
 - a focus verdict (sharp, soft, missed, motion, shake or unknown) at the eyes of the focused face, else the AF point the camera used, else the sharpest detail, with the background's sharpness, the shutter against the handheld limit, and per-face sharpness;
 - the photo's SHA-256 content hash;
 - then, per folder: scenes and bursts from capture time, lens settings, light and the look descriptor; near-duplicates inside bursts; faces followed through each burst by position; every frame ranked with a one-line reason ("#4 is better: 1 of 3 blinking, 62% as sharp as the sharpest frame").
@@ -153,7 +153,10 @@ Measured on the reference machine (Ryzen 7 3700X, 32 GB) with the 29 sample NEFs
 
 - **Thresholds are provisional:** every focus, grouping, ranking and sorting threshold was set on the 29 Phase 0 samples, not on the golden set (ADR 0008, ADR 0009).
 - **AF points:** the 51-point layout is estimated from Nikon's statement that the points cover the 1.3× crop frame. Its spacing is not measured.
-- **Faces:** the landmarker does not confirm some faces (babies in profile, a 100 mm flash close-up); those have no blink or smile scores and do not count as people in a burst.
+- **Faces:**
+  - The landmarker does not confirm some faces (babies in profile or lying sideways, adults in profile or under a cap, a 100 mm flash close-up); those have no blink or smile scores and do not count as people in a burst.
+  - A false box the landmarker does not confirm (a foot, a toy, decorations) still makes a photo count as a group shot, which starts the tiled pass (ADR 0012).
+  - Faces are followed through a burst by box overlap, so a person who moves more than about half a face width between two frames becomes a new person, in burst compare and in the ranking's "faces hidden" count.
 - **Timings:** all were measured from the internal disk. On the USB hard disk, exiftool took about 39 ms per file in Phase 0, and every photo's analysis reads its whole file (about 30 MB).
 - **Sidecars from earlier builds:** before ADR 0010, rating a photo in the app wrote `[General] Rank` into its sidecar, or created a sidecar holding only the rating. Those files stay as they are, and the RawTherapee GUI's handling of a rating-only sidecar has not been checked by eye.
 - **Renders** (from Phase 0):

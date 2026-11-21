@@ -1,4 +1,5 @@
 import shutil
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -208,6 +209,112 @@ def test_tracks_follow_faces_by_position():
     assert tracks == [[0, 1], [1]]
 
 
+# --- faces -----------------------------------------------------------------------------------------------------------
+
+
+def face(box, eyes=None, marks=(), score=0.9, source="whole") -> faces.Face:
+    """A detected box; `eyes` (two iris centres) means the landmarker read a face for it."""
+    found = faces.Face(box=list(box), score=score, source=source, landmarks=list(marks))
+    if eyes is not None:
+        found.confirmed, found.eyes = True, [list(e) for e in eyes]
+    return found
+
+
+PORTRAIT = (2000, 3000)
+
+
+def test_a_face_beside_the_box_does_not_confirm_it():
+    # A box on a child's hands and a toy under the chin: its crop also holds the child's face, above the box.
+    hands = face([0.47, 0.50, 0.18, 0.16], marks=[0.49, 0.53, 0.58, 0.52], score=0.68, source="tiled")
+    childs_eyes = [(0.400, 0.444), (0.487, 0.434)]
+    assert faces.matching_face(hands, [childs_eyes], PORTRAIT) is None
+
+
+def test_a_box_takes_the_face_whose_eyes_are_inside_it():
+    # An adult cheek to cheek with a child: the adult's crop holds both faces, and the child's is found first.
+    adult = face([0.53, 0.33, 0.15, 0.13], marks=[0.56, 0.39, 0.64, 0.40])
+    childs, own = [(0.44, 0.385), (0.49, 0.386)], [(0.555, 0.392), (0.639, 0.407)]
+    assert faces.matching_face(adult, [childs, own], PORTRAIT) == 1
+    # Of two faces inside the box, the one nearest the detector's own eye points.
+    assert faces.matching_face(adult, [[(0.54, 0.35), (0.58, 0.35)], own], PORTRAIT) == 1
+
+
+class Look:
+    """A stand-in for the MediaPipe landmarker: gives the faces it was made with and counts its calls.
+
+    Each face is (two iris centres in crop coordinates, blink score). The crop is 1.8 times the box around its
+    centre, so the box covers crop coordinates 0.22-0.78.
+    """
+
+    def __init__(self, *found):
+        self.found, self.calls = found, 0
+
+    def detect(self, image):
+        self.calls += 1
+        marks, blends = [], []
+        for eyes, blink in self.found:
+            points = [SimpleNamespace(x=0.5, y=0.5) for _ in range(478)]
+            for i, (u, v) in zip(faces.IRIS, eyes, strict=True):
+                points[i] = SimpleNamespace(x=u, y=v)
+            marks.append(points)
+            blends.append([SimpleNamespace(category_name=n, score=blink) for n in ("eyeBlinkLeft", "eyeBlinkRight")])
+        return SimpleNamespace(face_landmarks=marks, face_blendshapes=blends, facial_transformation_matrixes=[])
+
+
+def reader(first: Look, second: Look) -> faces.FaceAnalyzer:
+    """A face analyzer whose two looks are stand-ins, so no model is needed."""
+    analyzer = faces.FaceAnalyzer.__new__(faces.FaceAnalyzer)
+    vars(analyzer).update(_landmarker=first, _second_look=second)
+    return analyzer
+
+
+CANVAS = np.zeros((1000, 1000, 3), np.uint8)
+NEIGHBOUR = ([(0.40, 0.06), (0.60, 0.06)], 0.01)  # a face above the box, such as a child's above their hands
+OWN = ([(0.38, 0.45), (0.62, 0.45)], 0.3)  # the face inside the box
+
+
+def boxed() -> faces.Face:
+    return face([0.4, 0.4, 0.2, 0.2], marks=[0.46, 0.48, 0.54, 0.48])
+
+
+def test_a_neighbours_face_does_not_count_and_a_second_look_finds_the_boxs_own():
+    # An adult cheek to cheek with a child: the first look finds the child's face, outside the adult's box.
+    first, second, box = Look(NEIGHBOUR), Look(NEIGHBOUR, OWN), boxed()
+    assert reader(first, second)._landmarks(CANVAS, box)
+    assert box.confirmed and box.blink_l == 0.3 and all(0.4 < x < 0.6 and 0.4 < y < 0.6 for x, y in box.eyes)
+    assert (first.calls, second.calls) == (1, 1)
+
+
+def test_a_box_beside_a_face_gets_nothing():
+    # A box on a child's hands under the chin: both looks find only the child's face above it.
+    box = boxed()
+    assert not reader(Look(NEIGHBOUR), Look(NEIGHBOUR))._landmarks(CANVAS, box)
+    assert not box.confirmed and box.blink_l is None and box.eyes == []
+
+
+def test_no_second_look_when_the_first_finds_no_face():
+    # Allowed several answers, the landmarker also finds faces in feet and pumpkins.
+    second = Look(OWN)
+    assert not reader(Look(), second)._landmarks(CANVAS, boxed())
+    assert second.calls == 0
+
+
+def test_two_boxes_reading_one_face_keep_one_unless_the_other_finds_its_own():
+    def pair():
+        a = face([0.40, 0.40, 0.2, 0.2], eyes=[(0.4568, 0.482), (0.5432, 0.482)], marks=[0.46, 0.48, 0.54, 0.48])
+        b = face([0.42, 0.45, 0.2, 0.2], eyes=[(0.4568, 0.482), (0.5432, 0.482)], marks=[0.47, 0.58, 0.57, 0.58])
+        return a, b
+
+    a, b = pair()
+    assert faces.same_face(a, b, (1000, 1000)) and faces.second_reader(a, b, (1000, 1000)) is b
+    # A close-up boxed twice: the second box finds no face of its own and goes.
+    assert reader(Look(), Look())._one_per_face(CANVAS, [a, b]) == [a]
+    # An adult beside the child they hold: the second look finds the adult's own face, lower in its box.
+    a, b = pair()
+    kept = reader(Look(), Look(([(0.38, 0.6), (0.62, 0.6)], 0.2)))._one_per_face(CANVAS, [a, b])
+    assert kept == [a, b] and b.blink_l == 0.2 and b.eyes[0][1] > 0.55
+
+
 # --- the real thing ------------------------------------------------------------------------------------------------
 
 needs_samples = pytest.mark.skipif(
@@ -233,6 +340,18 @@ def test_faces_on_a_group_shot_have_expressions_and_no_identity():
             "roll", "eyes", "cut_off",
         }  # fmt: skip
         assert data["confirmed"] and 0 <= data["smile"] <= 1
+
+
+@needs_samples
+def test_a_close_up_with_a_spoon_at_the_mouth_is_one_face():
+    from rie.scan import exif
+
+    nef = next(p for p in sample_nefs(29) if p.name == "DSC_3324.NEF")
+    record = next(exif.read_folder([nef]))
+    start, length = exif.preview_ranges(record)["full"]
+    img = faces.decode_upright(nef.read_bytes()[start : start + length], exif.orientation(record))
+    found = faces.FaceAnalyzer().analyze(img, 35.0)
+    assert len(found) == 1 and found[0].confirmed
 
 
 @needs_samples

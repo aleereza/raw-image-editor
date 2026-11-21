@@ -1,6 +1,6 @@
 # ADR 0003: Faces, eyes and smiles with YuNet and MediaPipe Face Landmarker
 
-- **Status:** accepted
+- **Status:** accepted; the landmarker's confirmation changed by ADR 0012 (a face counts for a box only when its irises lie inside it, a second look finds a box's own face when the first one found is a neighbour's, and two boxes never read one face)
 - **Date:** 2026-11-17 (Phase 0, spike c)
 - **Script:** `scripts/spikes/faces.py`
 
