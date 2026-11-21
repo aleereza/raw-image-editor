@@ -73,6 +73,38 @@ class Look:
 
         return apply
 
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "version": self.version,
+            "curve": [list(p) for p in self.curve],
+            "curve_mode": self.curve_mode,
+            "contrast": self.contrast,
+            "saturation": self.saturation,
+            "vibrance": self.vibrance,
+            "warmth": self.warmth,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> Look:
+        curve = tuple((float(x), float(y)) for x, y in data.get("curve") or NEUTRAL_CURVE)
+        look = cls(
+            name=str(data["name"]),
+            version=int(data.get("version", 1)),
+            curve=curve,
+            curve_mode=str(data.get("curve_mode", "perceptual")),
+            contrast=int(data.get("contrast", 0)),
+            saturation=int(data.get("saturation", 0)),
+            vibrance=int(data.get("vibrance", 0)),
+            warmth=float(data.get("warmth", 0.0)),
+            description=str(data.get("description", "")),
+        )
+        from ..engine.recipe import parse  # the recipe schema checks every value
+
+        parse({"schema": "rie.recipe/1", "params": look.params()})
+        return look
+
     def warm(self, temp: float) -> float:
         """A white balance temperature with this look's warmth bias."""
         if not self.warmth:

@@ -47,7 +47,8 @@ class ImageContext:
     faces: list[Face] = field(default_factory=list)
     scene: int | None = None
     burst: int | None = None
-    locked: Params = field(default_factory=dict)  # the owner's locked values (from RawTherapee sidecars)
+    locked: Params = field(default_factory=dict)  # the owner's locked values (sidecars, review)
+    locked_provenance: dict[str, dict[str, Any]] = field(default_factory=dict)  # their provenance, by group.name
     focus: dict[str, Any] = field(default_factory=dict)
     linear: LinearRaw | None = None  # filled by the editor before the agents run
     before: np.ndarray | None = None  # the as-shot render, linear sRGB (h, w, 3), upright and lens-corrected
@@ -65,16 +66,19 @@ class ImageContext:
         return sum(f.weight for f in self.faces)
 
 
-def _locked(recipe: dict[str, Any]) -> Params:
+def locked_values(recipe: dict[str, Any]) -> tuple[Params, dict[str, dict[str, Any]]]:
+    """The values a recipe's provenance marks as locked, and that provenance."""
     params = recipe.get("params", {})
     out: Params = {}
+    provenance: dict[str, dict[str, Any]] = {}
     for key, prov in recipe.get("provenance", {}).items():
         if not isinstance(prov, dict) or not prov.get("locked"):
             continue
         group, _, name = key.partition(".")
         if name in params.get(group, {}):
             out.setdefault(group, {})[name] = params[group][name]
-    return out
+            provenance[key] = prov
+    return out, provenance
 
 
 def load_contexts(conn: sqlite3.Connection, folder_id: int, folder: Path, image_ids: list[int]) -> list[ImageContext]:
@@ -114,6 +118,7 @@ def load_contexts(conn: sqlite3.Connection, folder_id: int, folder: Path, image_
     contexts = []
     for row in rows:
         membership = groups.get(row["id"], {})
+        locked, locked_provenance = locked_values(catalog.loads(row["recipe"], {}) or {})
         contexts.append(
             ImageContext(
                 name=row["name"],
@@ -125,7 +130,8 @@ def load_contexts(conn: sqlite3.Connection, folder_id: int, folder: Path, image_
                 faces=faces.get(row["id"], []),
                 scene=membership.get("scene"),
                 burst=membership.get("burst"),
-                locked=_locked(catalog.loads(row["recipe"], {}) or {}),
+                locked=locked,
+                locked_provenance=locked_provenance,
                 focus=catalog.loads(row["focus"], {}) or {},
             )
         )

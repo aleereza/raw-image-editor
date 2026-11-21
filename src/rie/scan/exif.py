@@ -301,3 +301,52 @@ def orientation(record: dict[str, Any]) -> int:
 def shutter_count(record: dict[str, Any]) -> int | None:
     value = _group(record, "Nikon", "ShutterCount")
     return value if isinstance(value, int) else None
+
+
+# --- writing metadata into an export, in the cache ------------------------------------------------------------------
+
+
+def copy_metadata(
+    raw: Path,
+    jpeg: Path,
+    cache: Path,
+    *,
+    lens: str | None = None,
+    artist: str = "",
+    copyright: str = "",
+    executable: str = "exiftool",
+) -> None:
+    """Copy a raw file's metadata into a rendered JPEG that lives in the app's cache (plan §6.1, ADR 0001).
+
+    RawTherapee keeps only part of the EXIF (no sub-seconds, no lens name) and bakes the orientation into the
+    pixels, so the EXIF goes over from the raw, the orientation is set to normal, and the lens name, artist and
+    copyright are written. This is the app's only metadata write, and it refuses any file outside the cache: the
+    JPEG reaches the photo folder afterwards through `rie.fileops`.
+    """
+    path = shutil.which(executable)
+    if path is None:
+        raise ExifError(f"{executable} not found on PATH")
+    jpeg, cache = jpeg.resolve(), cache.resolve()
+    if not jpeg.is_relative_to(cache) or jpeg.suffix.lower() not in (".jpg", ".jpeg"):
+        raise ExifError(f"refusing to write metadata into {jpeg}: only rendered JPEGs in the cache")
+    values = {"LensModel": lens or "", "Artist": artist, "Copyright": copyright}
+    if any("\n" in v or "\r" in v for v in values.values()):
+        raise ExifError("metadata values cannot contain line breaks")
+    args = [
+        path,
+        "-q",
+        "-q",
+        "-overwrite_original",
+        "-charset",
+        "filename=utf8",
+        "-tagsFromFile",
+        os.path.abspath(raw),
+        "-exif:all",
+        "--exif:Orientation",
+        "-xmp:all",
+        "-Orientation#=1",
+    ]
+    args += [f"-{tag}={value}" for tag, value in values.items() if value]
+    proc = subprocess.run([*args, str(jpeg)], capture_output=True, text=True, timeout=60, check=False)
+    if proc.returncode != 0:
+        raise ExifError(f"exiftool could not copy the metadata: {(proc.stderr or proc.stdout).strip()[:200]}")

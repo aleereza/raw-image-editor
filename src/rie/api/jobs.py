@@ -1,4 +1,5 @@
-"""Background jobs for the web server: opening a folder runs in a worker thread with its own catalog connection.
+"""Background jobs for the web server: opening, editing and exporting a folder run in a worker thread with their own
+catalog connection.
 
 Jobs run one at a time, in order (plan §3.4: one scheduler, worker pools inside the steps). Progress lives in memory
 for the event stream and in the `jobs` table, so a job that a crash interrupted shows up as failed and opening the
@@ -8,10 +9,12 @@ folder again resumes it: every step skips work that is already done.
 from __future__ import annotations
 
 import queue
+import sqlite3
 import sys
 import threading
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -46,6 +49,9 @@ class JobRunner:
         self.version = 0  # bumps on every change, for the event stream
         self._lock = threading.Lock()
         self._queue: queue.Queue[int] = queue.Queue()
+        # Other jobs (Phase 2: edit, export, re-render): a function of the job's connection and a progress callback,
+        # returning the message to show when it is done.
+        self._tasks: dict[int, Callable[[sqlite3.Connection, Callable[[str, int, int], None]], str]] = {}
         self._thread = threading.Thread(target=self._run, name="rie-jobs", daemon=True)
         self._thread.start()
         conn = catalog.connect(cfg.catalog_path)
@@ -77,6 +83,30 @@ class JobRunner:
         self._queue.put(job.id)
         return job
 
+    def submit_task(
+        self,
+        kind: str,
+        folder_id: int | None,
+        label: str,
+        task: Callable[[sqlite3.Connection, Callable[[str, int, int], None]], str],
+    ) -> Job:
+        """Queue any other job; `task` runs in the job thread with its own catalog connection."""
+        conn = catalog.connect(self.cfg.catalog_path)
+        try:
+            cur = conn.execute(
+                "INSERT INTO jobs (folder_id, kind, state, message, started_at) VALUES (?, ?, 'queued', ?, ?)",
+                (folder_id, kind, label, catalog.now()),
+            )
+            job = Job(id=int(cur.lastrowid or 0), kind=kind, path=label, folder_id=folder_id)
+        finally:
+            conn.close()
+        with self._lock:
+            self.jobs[job.id] = job
+            self._tasks[job.id] = task
+            self.version += 1
+        self._queue.put(job.id)
+        return job
+
     def snapshot(self) -> tuple[int, list[dict[str, Any]]]:
         with self._lock:
             return self.version, [j.to_json() for j in sorted(self.jobs.values(), key=lambda j: j.id)]
@@ -98,6 +128,12 @@ class JobRunner:
                     job.folder_id = folder_id
                     self._touch()
 
+                task = self._tasks.pop(job_id, None)
+                if task is not None:
+                    job.message = task(conn, progress)
+                    job.state = "done"
+                    catalog.backup(conn, self.cfg.paths.data)
+                    continue
                 result = open_folder(conn, self.cfg, Path(job.path), progress=progress, on_folder=found)
                 job.folder_id = result.scan.folder_id
                 paused = result.analysis is not None and result.analysis.paused

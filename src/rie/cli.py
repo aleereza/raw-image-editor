@@ -22,8 +22,10 @@ from .edit import EditError
 from .engine.rawtherapee import RenderError, RenderResult
 from .engine.recipe import RecipeError
 from .engine.recipe import load as load_recipe
+from .export import ExportError
 from .pipeline import open_folder
 from .render import RenderPlan, default_output, engine, render
+from .review import ReviewError
 from .scan import exif
 from .scan.folder import ScanError
 
@@ -71,6 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
     ed.add_argument("--no-qa", action="store_true", help="skip the checks on the edited render")
     ed.add_argument("--workers", type=int, default=4, help="photos at a time (default 4)")
     ed.add_argument("--size", type=int, metavar="PX", help="long edge of the previews (default render.preview_size)")
+
+    ex = commands.add_parser("export", help="write full-size JPEGs of the edited, kept photos into the folder's jpg/")
+    ex.add_argument("folder", type=Path, help="the shoot folder, edited before with `rie edit`")
+    ex.add_argument("--photo", action="append", help="only this photo, by file name (repeat for more)")
+    ex.add_argument("--workers", type=int, default=3, help="renders at a time (default 3)")
 
     ev = commands.add_parser(
         "eval", help="compare the agents with the owner's edits in RawTherapee sidecars (reads the folders only)"
@@ -284,6 +291,7 @@ def _catalog_folder(conn: sqlite3.Connection, cfg: config.Config, folder: Path) 
 def cmd_edit(args: argparse.Namespace, cfg: config.Config) -> int:
     from .edit import EditSettings, edit_folder
     from .edit_report import write_report
+    from .review import store_run
 
     conn = catalog.connect(cfg.catalog_path)
     try:
@@ -301,6 +309,8 @@ def cmd_edit(args: argparse.Namespace, cfg: config.Config) -> int:
         run = edit_folder(
             conn, cfg, folder_id, settings=settings, image_ids=ids, all_photos=args.all, progress=_progress
         )
+        run_id = store_run(conn, run)
+        catalog.backup(conn, cfg.paths.data)
         page = write_report(run, cfg)
     finally:
         conn.close()
@@ -316,8 +326,34 @@ def cmd_edit(args: argparse.Namespace, cfg: config.Config) -> int:
     for photo in run.photos:
         for error in photo.errors:
             print(f"  {photo.ctx.name}: {error}", file=sys.stderr)
-    print(f"report: {page}")
+    print(f"stored as edit run {run_id}; review it in `rie serve` (Review) or the report: {page}")
     return 0
+
+
+def cmd_export(args: argparse.Namespace, cfg: config.Config) -> int:
+    from .export import export_folder
+
+    conn = catalog.connect(cfg.catalog_path)
+    try:
+        folder_id = _catalog_folder(conn, cfg, args.folder)
+        ids = None
+        if args.photo:
+            marks = ",".join("?" * len(args.photo))
+            rows = conn.execute(
+                f"SELECT id FROM images WHERE folder_id = ? AND name IN ({marks})", (folder_id, *args.photo)
+            ).fetchall()
+            ids = [r["id"] for r in rows]
+        result = export_folder(conn, cfg, folder_id, image_ids=ids, workers=args.workers, progress=_progress)
+        catalog.backup(conn, cfg.paths.data)
+    finally:
+        conn.close()
+    print(
+        f"exported {result.exported} JPEGs ({result.bytes / 1e6:.0f} MB) into jpg/ in {result.seconds:.0f} s; "
+        f"{result.skipped} unchanged, {result.replaced} older JPEGs moved to the trash first, {result.failed} failed"
+    )
+    for error in result.errors[:10]:
+        print(f"  {error}", file=sys.stderr)
+    return 1 if result.failed else 0
 
 
 def cmd_eval(args: argparse.Namespace, cfg: config.Config) -> int:
@@ -354,6 +390,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_edit(args, cfg)
         if args.command == "eval":
             return cmd_eval(args, cfg)
+        if args.command == "export":
+            return cmd_export(args, cfg)
     except (
         config.ConfigError,
         RecipeError,
@@ -364,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:
         catalog.CatalogError,
         CullError,
         EditError,
+        ExportError,
+        ReviewError,
     ) as exc:
         print(f"rie: {exc}", file=sys.stderr)
         return 2

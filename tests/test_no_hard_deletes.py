@@ -47,6 +47,8 @@ ALLOWED: dict[tuple[str, str, str], str] = {
     ("edit_report.py", "write_report", ".write_text"): "the edit report and its JSON under <cache>/edits",
     ("evaluate.py", "measured_multipliers", ".write_text"): "probe profiles under <cache>/eval/probe",
     ("evaluate.py", "run", ".write_text"): "the evaluation report under <cache>/eval",
+    ("export.py", "export_folder", "tempfile.TemporaryDirectory"): "full-size renders under <cache>/tmp before "
+    "rie.fileops writes them into jpg/",
     ("render.py", "cached_render", "tempfile.TemporaryDirectory"): "temporary profiles under <cache>/tmp",
     ("engine/rawtherapee.py", "RawTherapee.render", ".unlink"): "a failed render's partial file next to its output",
     ("scan/previews.py", "write_cached", ".write_bytes"): "cached previews, checked to be under <cache>",

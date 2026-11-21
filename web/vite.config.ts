@@ -5,5 +5,11 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [svelte()],
   server: { proxy: { "/api": "http://127.0.0.1:7317" } },
-  build: { outDir: "dist", emptyOutDir: true, target: "es2022" },
+  // Two pages: the folders and culling page, and Phase 2's review page.
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    target: "es2022",
+    rollupOptions: { input: { main: "index.html", review: "review.html" } },
+  },
 });

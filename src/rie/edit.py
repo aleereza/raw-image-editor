@@ -240,7 +240,8 @@ def compose(photo: PhotoEdit, look: Look) -> None:
     for group, items in ctx.locked.items():
         for name, value in items.items():
             params.setdefault(group, {})[name] = value
-            provenance[f"{group}.{name}"] = {"source": "human", "locked": True}
+            key = f"{group}.{name}"
+            provenance[key] = dict(ctx.locked_provenance.get(key) or {"source": "human", "locked": True})
     if "white_balance" in ctx.locked:  # a locked white balance replaces the agent's whole group
         params["white_balance"] = dict(ctx.locked["white_balance"])
     photo.params = {g: v for g, v in params.items() if v}
