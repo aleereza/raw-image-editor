@@ -13,7 +13,7 @@
     tiles: Tile[];
     numbers: Map<number | null, number>; // each scene's number among all of the folder's scenes
     onselect: (id: number) => void;
-    onopen: (tile: Tile, id: number) => void; // a burst on click: compare; a single photo on double-click: the loupe
+    onopen: (tile: Tile, id: number) => void; // on a double-click: a single photo's loupe, a burst's compare
   } = $props();
   const size = 210;
   const DOTS = 8; // bigger bursts show their counts only
@@ -48,8 +48,8 @@
             data-tile={tile.key}
             data-photo={p.id}
             style:width="{size}px"
-            onclick={() => (burst ? onopen(tile, p.id) : onselect(p.id))}
-            ondblclick={() => !burst && onopen(tile, p.id)}
+            onclick={() => onselect(p.id)}
+            ondblclick={() => onopen(tile, p.id)}
             title={p.reason ?? p.name}
           >
             <img src={urls.thumb(p)} alt={p.name} loading={(order.get(tile.key) ?? 0) < 60 ? "eager" : "lazy"} decoding="async" />
