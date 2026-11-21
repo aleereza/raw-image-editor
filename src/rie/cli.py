@@ -7,6 +7,7 @@ import contextlib
 import os
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -16,6 +17,7 @@ from pathlib import Path
 from . import catalog, config, drive, locations, safety
 from .cull import actions
 from .cull.actions import CullError
+from .edit import EditError
 from .engine.rawtherapee import RenderError, RenderResult
 from .engine.recipe import RecipeError
 from .engine.recipe import load as load_recipe
@@ -57,6 +59,17 @@ def build_parser() -> argparse.ArgumentParser:
     rs = commands.add_parser("restore", help="move a folder's trashed rejects (or one photo) back from the trash")
     rs.add_argument("folder", type=Path, help="the shoot folder")
     rs.add_argument("--photo", help="only this photo, by file name")
+
+    ed = commands.add_parser(
+        "edit", help="edit a folder's kept photos with the agents; previews and a report go to the cache"
+    )
+    ed.add_argument("folder", type=Path, help="the shoot folder, opened before with `rie open` (read only)")
+    ed.add_argument("--all", action="store_true", help="every present photo, not only those Done culling keeps")
+    ed.add_argument("--photo", action="append", help="only this photo, by file name (repeat for more)")
+    ed.add_argument("--no-warmth", action="store_true", help="neutralize warm light fully")
+    ed.add_argument("--no-qa", action="store_true", help="skip the checks on the edited render")
+    ed.add_argument("--workers", type=int, default=4, help="photos at a time (default 4)")
+    ed.add_argument("--size", type=int, metavar="PX", help="long edge of the previews (default render.preview_size)")
     return parser
 
 
@@ -250,6 +263,55 @@ def cmd_restore(args: argparse.Namespace, cfg: config.Config) -> int:
     return 0
 
 
+def _catalog_folder(conn: sqlite3.Connection, cfg: config.Config, folder: Path) -> int:
+    location = locations.locate(folder, cfg)
+    row = conn.execute(
+        "SELECT id FROM folders WHERE drive_uuid = ? AND path = ?", (location.drive_uuid, location.path)
+    ).fetchone()
+    if row is None:
+        raise CullError(f"{folder} is not in the catalog; open it first with `rie open`")
+    return int(row["id"])
+
+
+def cmd_edit(args: argparse.Namespace, cfg: config.Config) -> int:
+    from .edit import EditSettings, edit_folder
+    from .edit_report import write_report
+
+    conn = catalog.connect(cfg.catalog_path)
+    try:
+        folder_id = _catalog_folder(conn, cfg, args.folder)
+        ids = None
+        if args.photo:
+            marks = ",".join("?" * len(args.photo))
+            rows = conn.execute(
+                f"SELECT id FROM images WHERE folder_id = ? AND name IN ({marks})", (folder_id, *args.photo)
+            ).fetchall()
+            if len(rows) != len(set(args.photo)):
+                raise CullError("some --photo names are not in the folder")
+            ids = [r["id"] for r in rows]
+        settings = EditSettings(keep_warm=not args.no_warmth, qa=not args.no_qa, workers=args.workers, size=args.size)
+        run = edit_folder(
+            conn, cfg, folder_id, settings=settings, image_ids=ids, all_photos=args.all, progress=_progress
+        )
+        page = write_report(run, cfg)
+    finally:
+        conn.close()
+    m = run.metrics()
+    print(
+        f"edited {m['photos'] - m['failed']} of {m['photos']} photos in {m['seconds']:.0f} s; "
+        f"{m['review']} need a look ({m['no_review_share']:.0%} need no review)"
+    )
+    for name in ("geometry", "white_balance", "exposure", "color", "baseline"):
+        a = m[name]
+        bands = ", ".join(f"{k} {v}" for k, v in sorted(a["bands"].items()))
+        print(f"  {name.replace('_', ' ')}: changed {a['changed']}; {bands}")
+    for photo in run.photos:
+        for error in photo.errors:
+            print(f"  {photo.ctx.name}: {error}", file=sys.stderr)
+    print(f"report: {page}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -264,6 +326,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_restore(args, cfg)
         if args.command == "serve":
             return cmd_serve(args, cfg)
+        if args.command == "edit":
+            return cmd_edit(args, cfg)
     except (
         config.ConfigError,
         RecipeError,
@@ -273,6 +337,7 @@ def main(argv: list[str] | None = None) -> int:
         locations.DriveUnavailable,
         catalog.CatalogError,
         CullError,
+        EditError,
     ) as exc:
         print(f"rie: {exc}", file=sys.stderr)
         return 2

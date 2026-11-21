@@ -49,6 +49,7 @@ SKIN_FLOOR = 0.3
 WARM_FULL, WARM_NONE = 3200.0, 4200.0  # K: full warmth kept below the first, none above the second
 WARM_DEGREE = 0.8  # CAT16 degree of adaptation for clearly warm light (1 = neutral); provisional
 SAME_MIRED, SAME_GREEN = 6.0, 0.012  # closer than this to the camera's: keep the camera's
+SMALL_MIRED, SMALL_GREEN = 12.0, 0.03  # changes up to this are applied without review
 SPREAD_MIRED, SPREAD_GREEN = 30.0, 0.15  # candidate spreads at which agreement confidence falls to 1/e
 GREEN_SHARE = 0.5  # how far the fused green moves from the camera's
 MIXED_MIRED = 80.0  # spread of the frame's parts above which the light counts as mixed
@@ -280,7 +281,9 @@ def propose(ctx: ImageContext, *, keep_warm: bool = True) -> Proposal:
 
     evidence = {
         "candidates": [c.to_json() for c in found],
+        "camera": {"temp": round(t0), "green": round(g0, 4)},
         "estimate": {"temp": round(temp), "green": round(green, 4)},
+        "final": {"temp": round(final_temp), "green": round(final_green, 4)},
         "spread_mired": round(spread_mired, 1),
         "spread_green": round(spread_green, 4),
         "mixed_mired": round(mixed, 1),
@@ -304,6 +307,11 @@ def propose(ctx: ImageContext, *, keep_warm: bool = True) -> Proposal:
             evidence=evidence,
             flags=flags,
         )
+    if (
+        abs(wbmodel.mired(final_temp) - wbmodel.mired(t0)) <= SMALL_MIRED
+        and abs(math.log(final_green / g0)) <= SMALL_GREEN
+    ):
+        confidence = max(confidence, 0.8)  # close to the camera's: little at stake
     if abs(wbmodel.mired(final_temp) - wbmodel.mired(t0)) >= SAME_MIRED / 2:
         direction = f"{'warmer' if final_temp > t0 else 'cooler'} than the camera's {t0:.0f} K"
     else:

@@ -133,7 +133,7 @@ def srgb_to_temp(rgb: np.ndarray, observer: int = 2) -> tuple[float, float]:
 class CameraModel:
     """A camera's dcraw matrix (XYZ to camera, as in camconst.json or LibRaw's adobe_coeff) and what follows from it."""
 
-    cam_xyz: tuple[tuple[float, float, float], ...]
+    cam_xyz: tuple[tuple[float, ...], ...]
     cam_rgb: np.ndarray = field(init=False, repr=False, compare=False)
     rgb_cam: np.ndarray = field(init=False, repr=False, compare=False)
     pre_mul: np.ndarray = field(init=False, repr=False, compare=False)

@@ -14,6 +14,10 @@ and QA checks it on the actual render afterwards.
 - **Backlight:** dark faces against a bright background get Shadows & Highlights' shadow lift and a smaller push.
 - **Intent:** a push against the exposure compensation dialled in the camera is halved, and Active D-Lighting's
   deliberate underexposure is given back.
+
+Confidence is highest with confirmed faces and lower without faces and for backlight. A small change (under
+SMALL_EV, with no highlight or shadow tool) is applied without review whatever the confidence, since little is at
+stake; a push of more than BIG_PUSH is applied but flagged, because it shows noise.
 """
 
 from __future__ import annotations
@@ -34,6 +38,8 @@ KEY_TARGET = 0.46  # median sRGB luminance after the curve, for scenes without f
 KEY_SHARE = 0.75  # share of the key correction applied without faces
 MAX_UP, MAX_DOWN = 2.5, -2.0  # EV
 SAME_EV = 0.1  # smaller changes are left out
+SMALL_EV = 0.35  # changes up to this are applied without review
+BIG_PUSH = 2.0  # pushes above this are flagged for a look at the noise
 CLIP_LIMIT = 0.003  # share of the frame that may newly clip in large areas (plan §4.7: 0.3 %)
 SPECULAR = 0.0015  # clipped blobs smaller than this share of the frame count as specular
 HIGHLIGHT_THRESHOLD = 80  # RawTherapee's HighlightComprThreshold: compress only the top of the range (ADR 0012)
@@ -58,8 +64,8 @@ def _face_luminance(y: np.ndarray, ctx: ImageContext) -> tuple[float, float] | N
     values, weights = [], []
     for face in ctx.trusted_faces:
         x, yy, bw, bh = face.box
-        r0, r1 = int((yy + bh * 0.25) * h), int(math.ceil((yy + bh * 0.75) * h))
-        c0, c1 = int((x + bw * 0.25) * w), int(math.ceil((x + bw * 0.75) * w))
+        r0, r1 = int((yy + bh * 0.25) * h), math.ceil((yy + bh * 0.75) * h)
+        c0, c1 = int((x + bw * 0.25) * w), math.ceil((x + bw * 0.75) * w)
         patch = y[max(r0, 0) : min(r1, h), max(c0, 0) : min(c1, w)]
         if patch.size < 4:
             continue
@@ -118,7 +124,7 @@ class Predictor:
         newly = (self.peak * 2.0**ev >= 0.98) & (self.peak < 0.98)
         if not newly.any():
             return 0.0
-        count, labels, stats, _ = cv2.connectedComponentsWithStats(newly.astype(np.uint8), connectivity=8)
+        _count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(newly.astype(np.uint8), connectivity=8)
         area = stats[1:, cv2.CC_STAT_AREA]
         large = area[area >= SPECULAR * newly.size].sum()
         return float(large) / newly.size
@@ -129,12 +135,11 @@ def propose(ctx: ImageContext, look: Look = NEUTRAL) -> Proposal:
     before = _small(ctx.before)
     predictor = Predictor(before, look)
     y = predictor.y
-    as_shot = {"exposure": {"ev": 0.0, "highlight_compression": 0, "shadows": 0}}
     meta = ctx.meta
     faces = _face_luminance(y, ctx)
     p90 = float(np.quantile(cs.encode_srgb(y), 0.9))
     evidence: dict[str, float | str | None] = {"p90": round(p90, 3), "median_before": round(predictor.median(0), 3)}
-    confidence = 0.85
+    confidence = 0.9
     reasons = []
     shadows = 0
     if faces is not None and faces[1] >= 0.5:
@@ -146,18 +151,19 @@ def propose(ctx: ImageContext, look: Look = NEUTRAL) -> Proposal:
         if face_l < BACKLIT_FACE and p90 > BACKLIT_BRIGHT:
             shadows = BACKLIT_SHADOWS
             ev -= 0.3  # the shadow lift does part of the work
+            confidence *= 0.9
             reasons.append("backlit: shadows lifted")
         if ev == 0.0:
             # Faces are fine; let the frame's brightness move it a little.
             ev = max(-0.3, min(0.3, 0.5 * KEY_SHARE * predictor.ev_for_median(KEY_TARGET)))
             if abs(ev) < SAME_EV:
                 ev = 0.0
-        confidence *= min(1.0, 0.6 + 0.4 * face_weight)
+        confidence *= min(1.0, 0.85 + 0.15 * face_weight)
         subject = f"faces at L* {face_l:.0f}"
     else:
         key_ev = predictor.ev_for_median(KEY_TARGET)
         ev = KEY_SHARE * key_ev
-        confidence = 0.7
+        confidence = 0.75
         subject = f"median brightness {predictor.median(0):.2f}"
 
     compensation = meta.get("exposure_comp") or 0.0
@@ -181,12 +187,13 @@ def propose(ctx: ImageContext, look: Look = NEUTRAL) -> Proposal:
             reasons.append(f"{give_up:.1f} EV less to keep large highlights")
             confidence *= 0.85
     evidence["large_clipping"] = round(clipping, 4)
-    if abs(ev) > 1.5:
-        confidence *= 0.85
     ev = round(ev / 0.05) * 0.05
     if abs(ev) < SAME_EV:
         ev = 0.0
 
+    if abs(ev) <= SMALL_EV and not highlight and not shadows:
+        confidence = max(confidence, 0.8)
+    flags = [f"pushed {ev:+.1f} EV: check the noise"] if ev > BIG_PUSH else []
     params: dict[str, float | int] = {"ev": ev}
     if highlight:
         params["highlight_compression"] = highlight
@@ -215,6 +222,8 @@ def propose(ctx: ImageContext, look: Look = NEUTRAL) -> Proposal:
         {"exposure": params},
         confidence,
         rationale + extra,
-        as_shot={"exposure": {k: as_shot["exposure"].get(k, 0) for k in params}},
+        flags=flags,
+        # The threshold is how compression works, not how much: it is never blended.
+        as_shot={"exposure": {k: params[k] if k == "highlight_threshold" else 0 for k in params}},
         evidence=evidence,
     )
