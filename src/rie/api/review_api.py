@@ -7,17 +7,17 @@ render in for its instant approximation.
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 import subprocess
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import locations, looklab, review
+from .. import locations, looklab, managed, review
 from ..agents.looks import Look
 from ..config import Config
 from ..edit import EditSettings, edit_folder
@@ -249,7 +249,7 @@ def add_review_routes(
 
     @app.post("/api/photos/{image_id}/rawtherapee")
     def open_in_rawtherapee(image_id: int, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
-        """Open the raw file in the RawTherapee GUI (plan §6 Review: `E`)."""
+        """Write the managed sidecar and open the raw file in the RawTherapee GUI (plan §6 Review: `E`)."""
         row = conn.execute("SELECT folder_id, name FROM images WHERE id = ?", (image_id,)).fetchone()
         if row is None:
             raise HTTPException(404, f"no photo {image_id}")
@@ -257,10 +257,12 @@ def add_review_routes(
             raw = folder_path(conn, row["folder_id"], cfg) / row["name"]
         except locations.DriveUnavailable as exc:
             raise HTTPException(503, str(exc)) from exc
-        gui = Path("/usr/bin/rawtherapee")
-        if not gui.is_file():
+        gui = shutil.which("rawtherapee")
+        if gui is None:
             raise HTTPException(503, "the RawTherapee GUI (rawtherapee) is not installed")
-        subprocess.Popen(
-            [str(gui), str(raw)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
-        )
-        return {"opened": str(raw.name)}
+        try:
+            written = managed.write_sidecar(conn, cfg, image_id)  # so RawTherapee shows the app's edit
+        except (managed.SidecarError, OSError, RuntimeError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        subprocess.Popen([gui, str(raw)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        return {"opened": raw.name, "sidecar": written.action, "keys": written.keys}

@@ -393,7 +393,7 @@ def overrides_count(conn: sqlite3.Connection, folder_id: int) -> int:
     return int(
         conn.execute(
             "SELECT COUNT(DISTINCT o.image_id) FROM overrides o JOIN images i ON i.id = o.image_id "
-            "WHERE i.folder_id = ?",
+            "WHERE i.folder_id = ? AND o.action NOT IN ('lock', 'unlock')",  # a lock keeps the app's value
             (folder_id,),
         ).fetchone()[0]
     )

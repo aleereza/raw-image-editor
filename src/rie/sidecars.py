@@ -4,8 +4,9 @@ Plan §3.3 and decisions 5 and 14: an existing sidecar (`DSC_0001.NEF.pp3`) hold
 recipe can express that differs from RawTherapee's neutral default becomes one of the owner's locked parameters.
 Keys the recipe cannot express are kept in the file as they are and listed, so the UI can say they exist.
 
-The app has no ratings (ADR 0010): it ignores a sidecar's rating (`[General] Rank`) and writes nothing back. It only
-reads sidecars; Phase 2's managed sidecars will be its first writes.
+The app has no ratings (ADR 0010): it ignores a sidecar's rating (`[General] Rank`) and writes nothing back here.
+Phase 2's managed sidecars (`rie.managed`) are written elsewhere; when a sidecar the app wrote changes, only the
+values that differ from what the app wrote are the owner's, so only those are imported as locked.
 """
 
 from __future__ import annotations
@@ -164,6 +165,21 @@ def read_sidecar(text: str, name: str = "") -> SidecarInfo:
     return info
 
 
+def _drop_written(info: SidecarInfo, written: SidecarInfo) -> None:
+    """Leave out the values the app itself wrote into the sidecar: what remains is what the owner changed."""
+    for group in list(info.params):
+        theirs = written.params.get(group, {})
+        if group == "white_balance" and info.params[group] == theirs:
+            keys = list(info.params[group])
+        else:
+            keys = [k for k, v in info.params[group].items() if group != "white_balance" and theirs.get(k) == v]
+        for key in keys:
+            info.params[group].pop(key, None)
+            info.provenance.pop(f"{group}.{key}", None)
+        if not info.params[group]:
+            info.params.pop(group)
+
+
 # --- catalog -------------------------------------------------------------------------------------------------------
 
 
@@ -202,6 +218,8 @@ def import_sidecars(conn: sqlite3.Connection, folder_id: int, folder: Path, name
             continue
         try:
             info = read_sidecar(data.decode("utf-8", errors="replace"), name)
+            if row is not None and row["written"]:
+                _drop_written(info, read_sidecar(row["written"], name))
         except pp3.ProfileError as exc:
             stats.errors.append(f"{name}: {exc}")
             continue
