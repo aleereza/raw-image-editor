@@ -152,4 +152,5 @@ def test_edit_store_nudge_and_export_twice_through_fileops_only(tmp_path, cfg, c
     assert target.read_bytes() != old
     trashed = conn.execute("SELECT trashed, topdir FROM trash_entries").fetchone()
     assert (Path(trashed["topdir"]) / trashed["trashed"]).read_bytes() == old  # the old JPEG is in the trash
-    assert sorted(p.name for p in shoot.iterdir()) == sorted([nef.name, "jpg"])
+    assert sorted(p.name for p in shoot.iterdir()) == sorted([nef.name, f"{nef.name}.pp3", "jpg"])
+    assert first.sidecars == 1  # the managed sidecar, so RawTherapee shows the export's edit

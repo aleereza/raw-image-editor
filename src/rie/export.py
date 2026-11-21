@@ -5,7 +5,8 @@ reduction) into a temporary folder in the cache; exiftool copies the raw file's 
 (`rie.scan.exif.copy_metadata`, which writes only inside the cache); then `rie.fileops` creates `jpg/` if needed
 and the JPEG under a temporary name renamed into place, never over anything. A JPEG already at that name is moved
 to the drive's trash first, and recorded so it can be restored. A photo whose recipe has not changed since its
-last export, and whose JPEG is still the one written, is skipped.
+last export, and whose JPEG is still the one written, is skipped. Each exported photo's managed RawTherapee sidecar
+is written too (`rie.managed`, plan §3.3), so the folder opens in RawTherapee the way the app rendered it.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import catalog, fileops, locations
+from . import catalog, fileops, locations, managed
 from .config import Config
 from .cull.actions import final_calls, topdir_for
 from .engine.recipe import parse as parse_recipe
@@ -43,6 +44,7 @@ class ExportResult:
     exported: int = 0
     skipped: int = 0
     replaced: int = 0  # older JPEGs moved to the trash first
+    sidecars: int = 0  # managed sidecars created, updated or added to
     failed: int = 0
     bytes: int = 0
     seconds: float = 0.0
@@ -163,6 +165,12 @@ def export_folder(
                 except (OSError, fileops.FileOpsError) as exc:
                     result.failed += 1
                     result.errors.append(f"{photo['name']}: {exc}")
+                else:
+                    try:
+                        written = managed.write_sidecar(conn, cfg, photo["id"])
+                        result.sidecars += written.action in ("created", "updated", "added")
+                    except (managed.SidecarError, OSError, fileops.FileOpsError) as exc:
+                        result.errors.append(f"{photo['name']} sidecar: {exc}")
                 if progress:
                     progress("export", done, len(plans))
     result.seconds = time.perf_counter() - start

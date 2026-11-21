@@ -349,7 +349,8 @@ def cmd_export(args: argparse.Namespace, cfg: config.Config) -> int:
         conn.close()
     print(
         f"exported {result.exported} JPEGs ({result.bytes / 1e6:.0f} MB) into jpg/ in {result.seconds:.0f} s; "
-        f"{result.skipped} unchanged, {result.replaced} older JPEGs moved to the trash first, {result.failed} failed"
+        f"{result.skipped} unchanged, {result.replaced} older JPEGs moved to the trash first, {result.failed} failed; "
+        f"{result.sidecars} RawTherapee sidecars written"
     )
     for error in result.errors[:10]:
         print(f"  {error}", file=sys.stderr)
