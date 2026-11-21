@@ -179,25 +179,36 @@
     return tiles[tileIndex + 1]?.photo.id ?? null;
   }
 
+  // Where a decision moves on to: the next tile in the grid, the next photo in the loupe; compare stays.
+  function nextAfter(photo: Photo): number | null {
+    if (ui.mode === "grid") return nextTile();
+    if (ui.mode === "loupe") return items[items.findIndex((p) => p.id === photo.id) + 1]?.id ?? null;
+    return null;
+  }
+
+  // A decision against the app's call asks why, in a bar at the bottom. The photo stays on screen until the question
+  // is answered or skipped, so the answer can't seem to be about the next photo; then the view moves on as the
+  // decision would have. Any other key, or selecting another photo, drops the question.
+  let moveOn = false; // answering the question moves on to the next photo
+
+  function dropQuestion() {
+    ui.reasonFor = null;
+    moveOn = false;
+  }
+
   async function decide(photo: Photo, decision: Photo["decision"], advance = true) {
     const before = photo.decision;
-    // the next tile in the grid, the next photo in the loupe; compare stays
-    const target = !advance
-      ? null
-      : ui.mode === "grid"
-        ? nextTile()
-        : ui.mode === "loupe"
-          ? (items[items.findIndex((p) => p.id === photo.id) + 1]?.id ?? null)
-          : null;
-    update(photo.id, { decision });
     const overrules = decision !== null && photo.suggestion !== null && decision !== photo.suggestion;
+    const target = advance && !overrules ? nextAfter(photo) : null;
+    update(photo.id, { decision });
+    ui.reasonFor = overrules ? photo.id : null;
+    moveOn = overrules && advance;
     if (target !== null) select(target);
     try {
       await api.decide(photo.id, decision);
-      ui.reasonFor = overrules ? photo.id : null;
-      if (overrules) setTimeout(() => ui.reasonFor === photo.id && (ui.reasonFor = null), 5000);
     } catch (error) {
       update(photo.id, { decision: before });
+      if (ui.reasonFor === photo.id) dropQuestion();
       say(`not saved: ${(error as Error).message}`);
     }
   }
@@ -228,17 +239,27 @@
     }
   }
 
-  async function giveReason(reason: string) {
+  // A reason for the photo the question is about, or null for Skip; either moves on as the decision would have.
+  async function answer(reason: string | null) {
     const id = ui.reasonFor;
-    ui.reasonFor = null;
-    if (id === null) return;
+    const advance = moveOn;
+    dropQuestion();
+    const photo = ui.photos.find((p) => p.id === id);
+    if (!photo) return;
+    if (advance && ui.currentId === photo.id) select(nextAfter(photo));
+    if (reason === null) return;
     try {
-      await api.reason(id, reason);
-      update(id, { owner_reason: reason });
+      await api.reason(photo.id, reason);
+      update(photo.id, { owner_reason: reason });
     } catch (error) {
       say(`not saved: ${(error as Error).message}`);
     }
   }
+
+  // The question is about the photo on screen: it goes when another photo is selected.
+  $effect(() => {
+    if (ui.reasonFor !== null && ui.currentId !== ui.reasonFor) dropQuestion();
+  });
 
   function enterCompare() {
     ui.compareFrom = ui.mode === "loupe" ? "loupe" : "grid";
@@ -333,6 +354,36 @@
     timings: () => (ui.debug = !ui.debug),
   };
 
+  // The mouse's back button, the browser's Back and Alt+← step back like Esc, and from the grid with every photo
+  // shown, back to the folders. Firefox doesn't pass the mouse's side buttons to pages, but every browser goes back in
+  // its history, so the culling page keeps an entry of its own above the folders page's: going back from it is one
+  // step back, and the entry is put back while there is more to step back from.
+  const CULL_ENTRY = "raw-image-editor.cull";
+  let guarded = false; // the culling page's entry is in the history, above the folders page's
+  let ownBack = false; // the app itself is going back to the folders page's entry
+
+  function stepBack() {
+    dropQuestion(); // like Esc, Back skips the question
+    if (ui.done) return; // the Done culling dialog closes with its own buttons
+    if (ui.help || ui.zoom || ui.mode !== "grid" || ui.filter !== null) act.back();
+    else ui.view = "folders";
+  }
+
+  function onPopState() {
+    if (ownBack) {
+      ownBack = false;
+      history.replaceState(history.state, "", "#");
+    } else if (guarded) {
+      guarded = false;
+      stepBack();
+      if (ui.view === "cull") {
+        history.pushState(CULL_ENTRY, "", `#folder=${ui.folderId}`);
+        guarded = true;
+      }
+    }
+    // else Forward, or an entry from before the page loaded: the address decides, through hashchange
+  }
+
   function onKey(event: KeyboardEvent) {
     if (ui.view !== "cull" || ui.done) return;
     const target = event.target as HTMLElement;
@@ -341,10 +392,10 @@
     const key = event.key;
     if (ui.reasonFor !== null && /^[1-5]$/.test(key)) {
       event.preventDefault();
-      giveReason(REASONS[Number(key) - 1]);
+      answer(REASONS[Number(key) - 1]);
       return;
     }
-    if (ui.reasonFor !== null && key !== "Shift") ui.reasonFor = null;
+    if (ui.reasonFor !== null && key !== "Shift") dropQuestion(); // any other key skips the question, then does its job
     const keys: Record<string, () => void> = {
       ArrowRight: act.next,
       ArrowLeft: act.previous,
@@ -397,7 +448,8 @@
     };
     const fromHash = () => {
       const folder = Number(new URLSearchParams(location.hash.slice(1)).get("folder"));
-      if (folder && folder !== ui.folderId) loadFolder(folder).catch(() => (ui.view = "folders"));
+      // another folder, or this one again after going back to the folders page (Forward)
+      if (folder && (folder !== ui.folderId || ui.view !== "cull")) loadFolder(folder).catch(() => (ui.view = "folders"));
     };
     fromHash();
     window.addEventListener("hashchange", fromHash);
@@ -409,9 +461,21 @@
     };
   });
 
+  // The address names the open folder, so a reload comes back to it. The culling page's own history entry is
+  // explained above onKey.
   $effect(() => {
-    if (ui.view === "cull" && ui.folderId !== null) history.replaceState(null, "", `#folder=${ui.folderId}`);
-    else history.replaceState(null, "", "#");
+    const cull = ui.view === "cull" && ui.folderId !== null;
+    const url = cull ? `#folder=${ui.folderId}` : "#";
+    if (cull && !guarded) {
+      guarded = true;
+      // back on the culling page's own entry after a reload or Forward: no second one
+      if (history.state === CULL_ENTRY) history.replaceState(CULL_ENTRY, "", url);
+      else history.pushState(CULL_ENTRY, "", url);
+    } else if (!cull && guarded) {
+      guarded = false;
+      ownBack = true;
+      history.back(); // to the folders page's entry; onPopState gives it the folders page's address
+    } else history.replaceState(history.state, "", url);
   });
 
   $effect(() => {
@@ -437,7 +501,7 @@
   });
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onpopstate={onPopState} />
 
 <div class="app">
   <header>
@@ -544,9 +608,12 @@
   {/if}
 
   {#if ui.reasonFor !== null}
-    <div class="reason">
-      Why? {#each REASONS as reason, i}<button onclick={() => giveReason(reason)}><kbd>{i + 1}</kbd> {reason}</button>{/each}
-      <span class="muted">optional; any other key skips</span>
+    {@const asked = ui.photos.find((p) => p.id === ui.reasonFor)}
+    <div class="reason" role="group" aria-label="Why you went against the app">
+      <span>Why {asked?.decision === "keep" ? "keep" : "reject"} <b>{asked?.name}</b>?</span>
+      {#each REASONS as reason, i}<button onclick={() => answer(reason)}><kbd>{i + 1}</kbd> {reason}</button>{/each}
+      <button onclick={() => answer(null)} title="Move on without a reason">Skip</button>
+      <span class="muted">optional; any other key skips it</span>
     </div>
   {/if}
   {#if ui.message}<div class="toast">{ui.message}</div>{/if}
@@ -595,6 +662,7 @@
   .reason {
     position: fixed; bottom: 48px; left: 50%; transform: translateX(-50%); background: var(--panel);
     border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; display: flex; gap: 6px; align-items: center;
+    flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100vw - 32px);
   }
   .toast {
     position: fixed; top: 52px; left: 50%; transform: translateX(-50%); background: #2a2f3a; border: 1px solid var(--line);
