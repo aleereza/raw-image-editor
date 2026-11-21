@@ -23,6 +23,7 @@ dependencies = [
   # The local web UI (decision D3): `rie serve`.
   "fastapi>=0.120",
   "uvicorn>=0.38",
+  "colour-science>=0.4.6,<0.5",
 ]
 
 [dependency-groups]

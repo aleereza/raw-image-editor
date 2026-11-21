@@ -7,11 +7,14 @@ RawTherapee ignores unknown keys silently, so validation here is strict: an unkn
 
 Conventions: `geometry.rotate_deg` is positive counter-clockwise, as RawTherapee's `[Rotation] Degree`;
 `geometry.crop` is in pixels of the displayed (orientation-applied) frame after rotation; `white_balance.tint` is
-RawTherapee's `Green` (above 1 renders greener).
+RawTherapee's `Green` (above 1 renders greener); `tone.curve` is RawTherapee's tone curve 1, a cubic spline through
+[x, y] points in sRGB-encoded values (docs/adr/0012-edit-agents-v1.md measured the `tone` keys and
+`color.protect_skin`).
 """
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import re
@@ -104,7 +107,27 @@ class CropBox:
         return box
 
 
-type Spec = Number | Choice | Flag | NumberOrAuto | CropBox
+@dataclass(frozen=True)
+class CurvePoints:
+    """Points [[x, y], ...] of a tone curve: 2-12 of them, x rising strictly from 0 to 1, y rising within 0..1."""
+
+    def check(self, where: str, value: Any) -> list[list[float]]:
+        if not isinstance(value, list) or not 2 <= len(value) <= 12:
+            raise RecipeError(f"{where} must be a list of 2 to 12 [x, y] points")
+        points = []
+        for i, point in enumerate(value):
+            if not isinstance(point, list | tuple) or len(point) != 2:
+                raise RecipeError(f"{where}[{i}] must be an [x, y] pair")
+            points.append([float(Number(0, 1).check(f"{where}[{i}][{j}]", v)) for j, v in enumerate(point)])
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        if xs[0] != 0 or xs[-1] != 1 or any(b <= a for a, b in itertools.pairwise(xs)):
+            raise RecipeError(f"{where} needs x rising strictly from 0 to 1")
+        if any(b < a for a, b in itertools.pairwise(ys)):
+            raise RecipeError(f"{where} must not fall: each y at least the one before")
+        return points
+
+
+type Spec = Number | Choice | Flag | NumberOrAuto | CropBox | CurvePoints
 
 PARAMS: dict[str, dict[str, Spec]] = {
     "white_balance": {
@@ -115,11 +138,19 @@ PARAMS: dict[str, dict[str, Spec]] = {
     "exposure": {
         "ev": Number(-5, 12),
         "highlight_compression": Number(0, 500, integer=True),
+        "highlight_threshold": Number(0, 100, integer=True),
         "shadows": Number(0, 100, integer=True),
     },
     "color": {
         "vibrance": Number(-100, 100, integer=True),
         "saturation": Number(-100, 100, integer=True),
+        "protect_skin": Flag(),
+    },
+    "tone": {
+        "curve": CurvePoints(),
+        "curve_mode": Choice(("perceptual", "film", "standard")),
+        "contrast": Number(-100, 100, integer=True),
+        "match_camera": Flag(),
     },
     "geometry": {
         "rotate_deg": Number(-45, 45),
@@ -138,6 +169,9 @@ PARAMS: dict[str, dict[str, Spec]] = {
         "nr_chroma": NumberOrAuto(Number(0, 100)),
     },
 }
+
+
+CURVE_MODES = {"perceptual": "Perceptual", "film": "FilmLike", "standard": "Standard"}
 
 
 @dataclass(frozen=True)
@@ -211,6 +245,9 @@ def parse(data: Any) -> Recipe:
             raise RecipeError("white_balance.as_shot cannot be combined with temperature_k or tint")
     elif wb and not {"temperature_k", "tint"} <= set(wb):
         raise RecipeError("a custom white_balance needs both temperature_k and tint (or as_shot: true)")
+    tone = params.get("tone", {})
+    if tone.get("match_camera") and "curve" in tone:
+        raise RecipeError("tone.match_camera replaces the tone curve; give one or the other")
     return Recipe(params=params, engine=engine, image=image, provenance=provenance)
 
 
@@ -243,6 +280,8 @@ def compile_profile(recipe: Recipe) -> pp3.Profile:
         put("Exposure", "Compensation", round(exposure["ev"], 3))
     if "highlight_compression" in exposure:
         put("Exposure", "HighlightCompr", exposure["highlight_compression"])
+    if "highlight_threshold" in exposure:
+        put("Exposure", "HighlightComprThreshold", exposure["highlight_threshold"])
     if "shadows" in exposure:
         put("Shadows & Highlights", "Enabled", exposure["shadows"] > 0)
         put("Shadows & Highlights", "Shadows", exposure["shadows"])
@@ -255,6 +294,23 @@ def compile_profile(recipe: Recipe) -> pp3.Profile:
         put("Vibrance", "PastSatTog", True)
     if "saturation" in color:
         put("Exposure", "Saturation", color["saturation"])
+    if "protect_skin" in color:
+        put("Vibrance", "ProtectSkins", color["protect_skin"])
+
+    tone = p.get("tone", {})
+    if "curve" in tone:
+        put("Exposure", "CurveMode", CURVE_MODES[tone.get("curve_mode", "perceptual")])
+        put(
+            "Exposure",
+            "Curve",
+            "1;" + "".join(f"{pp3.format_value(x)};{pp3.format_value(y)};" for x, y in tone["curve"]),
+        )
+    elif "curve_mode" in tone:
+        put("Exposure", "CurveMode", CURVE_MODES[tone["curve_mode"]])
+    if "contrast" in tone:
+        put("Exposure", "Contrast", tone["contrast"])
+    if "match_camera" in tone:
+        put("Exposure", "HistogramMatching", tone["match_camera"])
 
     geometry = p.get("geometry", {})
     if "rotate_deg" in geometry:
