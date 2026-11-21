@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import shutil
 import socket
@@ -70,6 +71,13 @@ def build_parser() -> argparse.ArgumentParser:
     ed.add_argument("--no-qa", action="store_true", help="skip the checks on the edited render")
     ed.add_argument("--workers", type=int, default=4, help="photos at a time (default 4)")
     ed.add_argument("--size", type=int, metavar="PX", help="long edge of the previews (default render.preview_size)")
+
+    ev = commands.add_parser(
+        "eval", help="compare the agents with the owner's edits in RawTherapee sidecars (reads the folders only)"
+    )
+    ev.add_argument("folders", type=Path, nargs="+", help="shoot folders whose sidecars hold the owner's edits")
+    ev.add_argument("--agent", choices=("wb", "geometry", "all"), default="all", help="which agent (default all)")
+    ev.add_argument("--workers", type=int, default=4, help="photos at a time (default 4)")
     return parser
 
 
@@ -312,6 +320,22 @@ def cmd_edit(args: argparse.Namespace, cfg: config.Config) -> int:
     return 0
 
 
+def cmd_eval(args: argparse.Namespace, cfg: config.Config) -> int:
+    from . import evaluate
+
+    agents = ("wb", "geometry") if args.agent == "all" else (args.agent,)
+    for folder in args.folders:
+        if _inside(cfg.paths.cache, folder):
+            raise CullError(f"{folder} holds the app's cache; give a shoot folder")
+    results, report = evaluate.run(args.folders, cfg, agents=agents, workers=args.workers, progress=_progress)
+    for result in results:
+        print(f"{result.agent}: {json.dumps(result.summary)}")
+        for error in result.errors[:10]:
+            print(f"  {error}", file=sys.stderr)
+    print(f"report: {report}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -328,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_serve(args, cfg)
         if args.command == "edit":
             return cmd_edit(args, cfg)
+        if args.command == "eval":
+            return cmd_eval(args, cfg)
     except (
         config.ConfigError,
         RecipeError,
