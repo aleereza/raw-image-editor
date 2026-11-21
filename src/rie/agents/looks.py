@@ -6,7 +6,7 @@ the owner's locked values win. Until the owner builds looks in the look lab, eve
 
 **neutral@1:** a gentle filmic curve in RawTherapee's Perceptual mode, which changes lightness and keeps colours.
 RawTherapee's plain render is about 1.7 times darker than the camera's JPEG in the mid-tones (median 0.29 against
-0.44 sRGB on the samples, ADR 0012); the curve lifts mid-grey from 0.46 to 0.56, steepens the mid-tones a little,
+0.44 sRGB on the samples, ADR 0013); the curve lifts mid-grey from 0.46 to 0.56, steepens the mid-tones a little,
 deepens the darkest shadows slightly and rolls the highlights off towards white, and the exposure agent sets the
 rest per photo.
 """

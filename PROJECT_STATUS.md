@@ -4,6 +4,18 @@ Last updated: 2026-11-21
 
 The state of the code. Notes about one installation, such as its photo drive and sample set, belong in the Git-ignored `local/` folder.
 
+## Phase 2: edit agents (in progress)
+
+Milestone 1 of Phase 2 (plan §10) is built on the branch `claude/phase-2-agents` (2026-11-21); ADR 0013 records its measurements and decisions. The catalog migration, the review UI, the export into `jpg/` and the look lab are not built yet.
+
+- `rie edit FOLDER [--all] [--photo NAME] [--no-warmth] [--no-qa] [--workers N] [--size PX]` edits the photos Done culling keeps (with `--all`, every present photo) of a folder opened with `rie open`. It reads the raw files only; previews and a report (`<cache>/edits/folder-<id>/index.html`, with `edits.json`) go to the cache. The catalog is not changed.
+- `rie eval FOLDER... [--agent wb|geometry|all]` compares the white balance agent with the owner's custom white balance in existing RawTherapee sidecars, measured on probe renders, and straightening with the owner's rotations. It reads the folders only.
+- **Per photo:** the raw is read once (linear camera RGB) and rendered as shot with the fast preview profile; the geometry (lines on that render), white balance (linear raw, skin of confirmed faces), exposure (that render through the look's curve, faces first) and colour (vibrance from chroma) agents propose parameters with a confidence and a reason.
+- **Per folder:** each scene's white balance and exposure are harmonized, every proposal is routed (applied at ≥ 0.8, halfway and queued at ≥ 0.5, else as shot and queued), noise reduction follows the effective ISO, the neutral look adds its tone curve, and the owner's locked values win. The edited preview is checked (clipped faces, crushed shadows, gamut, neutral surfaces, level horizon) and adjusted once.
+- **Renders** are cached by everything that decides their pixels (`<cache>/renders/cache/`).
+- **On the 29 samples:** 3.7 s per photo with four at a time; 38 % need no review; white balance changed on 21 and exposure on 26; no rendered face clipped; geometry abstained on every sample. The white balance agent has not been tested against the owner's picks yet (`rie eval` needs the owner's go-ahead to read real shoot folders).
+- **Limits:** every threshold is provisional until the golden set; GeoCalib is not used; edited previews take about four times the plan's hoped-for 1 s per photo; output sharpening and hot-pixel filtering are not added.
+
 ## Built (Phase 1)
 
 Phase 1 ("fast, partly automatic culling", plan §10) is built on the branch `claude/phase-1-culling` and waits for the owner's review and a first real shoot. ADRs 0007–0009 record its decisions.

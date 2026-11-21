@@ -1,4 +1,4 @@
-"""Phase 2 spike: what the tone and colour keys of the looks do to a render (ADR 0012).
+"""Phase 2 spike: what the tone and colour keys of the looks do to a render (ADR 0013).
 
 Renders one NEF with the base profile, then with each candidate key, and compares the renders pixel by pixel:
 for every variant it prints the output level reached by pixels of the base render at a few input levels (sRGB,

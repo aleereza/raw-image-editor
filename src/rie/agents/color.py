@@ -2,7 +2,7 @@
 
 Colours are measured in the linear raw, balanced with the white balance the photo will get and converted to
 CIELAB: muted photos (overcast, dim rooms) get some vibrance, colourful ones none. RawTherapee's vibrance protects
-skin tones (`[Vibrance] ProtectSkins`, which ADR 0012 measured), and caps keep foliage from turning neon and
+skin tones (`[Vibrance] ProtectSkins`, which ADR 0013 measured), and caps keep foliage from turning neon and
 saturated colours inside the gamut. The look adds its own saturation and vibrance on top.
 """
 

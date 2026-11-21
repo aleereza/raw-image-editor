@@ -13,7 +13,7 @@ into raw channel multipliers in two steps (5.13, `rtengine/colortemp.cc` and `ra
 
 The inverse finds the temperature from the blue/red ratio by bisection with Green at 1, then Green from green/red,
 as RawTherapee's `mul2temp` does. The camera's own (as-shot) multipliers map to the temperature and green that the
-RawTherapee GUI shows for "Camera". docs/adr/0012-edit-agents-v1.md records the renders that confirmed this model.
+RawTherapee GUI shows for "Camera". docs/adr/0013-edit-agents-v1.md records the renders that confirmed this model.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def _tables(observer: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     cmf = np.array([cmfs[w] for w in nm])
     basis = colour.colorimetry.SDS_BASIS_FUNCTIONS_CIE_ILLUMINANT_D_SERIES
     # The 10 nm daylight basis, interpolated linearly to 5 nm: this matches RawTherapee's renders within 0.2 %,
-    # where reading the 10 nm sample at or below each wavelength was 1-1.5 % off in blue (ADR 0012).
+    # where reading the 10 nm sample at or below each wavelength was 1-1.5 % off in blue (ADR 0013).
     daylight = np.array([[basis[name][w] for name in ("S0", "S1", "S2")] for w in nm])
     return nm * 1e-9, cmf, daylight
 

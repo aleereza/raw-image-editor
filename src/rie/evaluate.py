@@ -6,7 +6,7 @@ Only reads the photo folders: the raw files and their `.pp3` sidecars. Renders a
   that means in raw multipliers is measured, not modelled: the raw is rendered twice with no input profile and an
   sRGB working space, once with the camera's white balance and once with the sidecar's white balance section
   (and its version line, so RawTherapee reads an old profile the way it was written: 5.8 profiles use the
-  10-degree observer, ADR 0012). The ratio of the two renders is the ratio of the multipliers. The agent's neutral
+  10-degree observer, ADR 0013). The ratio of the two renders is the ratio of the multipliers. The agent's neutral
   estimate (without the warm-light intent) and the camera's own white balance are both compared with it as the
   angle between illuminant colours, the usual colour-constancy error (target: median 2.5 degrees or less).
 - **Straightening (§4.5):** the owner's `[Rotation] Degree` against the roll the geometry agent measures on the
@@ -44,7 +44,7 @@ from .scan.files import quick_hash
 
 type Progress = Callable[[str, int, int], None]
 
-# Measurement only: camera RGB times the white balance multipliers, through the sRGB curve (ADR 0012).
+# Measurement only: camera RGB times the white balance multipliers, through the sRGB curve (ADR 0013).
 PROBE_OVERLAY = pp3.stack(
     {
         "Color Management": {"InputProfile": "(none)", "WorkingProfile": "sRGB", "OutputProfile": "RTv4_sRGB"},

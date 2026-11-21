@@ -42,7 +42,7 @@ SMALL_EV = 0.35  # changes up to this are applied without review
 BIG_PUSH = 2.0  # pushes above this are flagged for a look at the noise
 CLIP_LIMIT = 0.003  # share of the frame that may newly clip in large areas (plan §4.7: 0.3 %)
 SPECULAR = 0.0015  # clipped blobs smaller than this share of the frame count as specular
-HIGHLIGHT_THRESHOLD = 80  # RawTherapee's HighlightComprThreshold: compress only the top of the range (ADR 0012)
+HIGHLIGHT_THRESHOLD = 80  # RawTherapee's HighlightComprThreshold: compress only the top of the range (ADR 0013)
 BACKLIT_FACE, BACKLIT_BRIGHT = 38.0, 0.8  # face L* below, and the frame's 90th percentile above (sRGB)
 BACKLIT_SHADOWS = 25
 # Active D-Lighting levels (exiftool's numbers) and the light the D7100 holds back for each; provisional.

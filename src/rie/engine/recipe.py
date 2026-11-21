@@ -8,7 +8,7 @@ RawTherapee ignores unknown keys silently, so validation here is strict: an unkn
 Conventions: `geometry.rotate_deg` is positive counter-clockwise, as RawTherapee's `[Rotation] Degree`;
 `geometry.crop` is in pixels of the displayed (orientation-applied) frame after rotation; `white_balance.tint` is
 RawTherapee's `Green` (above 1 renders greener); `tone.curve` is RawTherapee's tone curve 1, a cubic spline through
-[x, y] points in sRGB-encoded values (docs/adr/0012-edit-agents-v1.md measured the `tone` keys and
+[x, y] points in sRGB-encoded values (docs/adr/0013-edit-agents-v1.md measured the `tone` keys and
 `color.protect_skin`).
 """
 

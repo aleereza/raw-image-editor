@@ -10,5 +10,5 @@
 - `qa`: checks on the actual render, which may adjust a photo once.
 
 `rie.edit` runs them over a folder. Every threshold here is provisional until the golden set exists (plan §9);
-ADR 0012 lists them.
+ADR 0013 lists them.
 """
