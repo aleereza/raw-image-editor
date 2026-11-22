@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from rie import catalog, cli, config
+from rie import catalog, cli, config, evaluate
 from rie.edit import EditSettings, edit_folder, photos_to_edit
 from rie.edit_report import write_report
 from rie.engine.recipe import parse
@@ -79,6 +79,20 @@ def test_edit_folder_edits_real_nefs_and_writes_nothing_in_the_folder(tmp_path):
         parse(photo.recipe())
     data = json.loads((page.parent / "edits.json").read_text())
     assert data["metrics"]["photos"] == 2 and page.read_text().count('class="photo"') == 2
+
+
+def test_eval_reads_the_catalog_without_migrating_it(tmp_path):
+    cfg = config.parse({"paths": {"cache": str(tmp_path / "cache"), "data": str(tmp_path / "data")}})
+    old = catalog.connect(cfg.catalog_path, migrate=False)
+    number, _, sql = catalog.migrations()[0]
+    old.executescript(sql)
+    old.execute(f"PRAGMA user_version = {number}")
+    old.close()
+    evaluate.run([], cfg, agents=("wb",))
+    conn = catalog.connect(cfg.catalog_path, migrate=False)
+    assert catalog.schema_version(conn) == number
+    assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'edit_runs'").fetchone() is None
+    conn.close()
 
 
 @pytest.mark.rawtherapee

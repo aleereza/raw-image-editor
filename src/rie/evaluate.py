@@ -1,6 +1,7 @@
 """`rie eval`: the agents against the owner's own edits in existing RawTherapee sidecars (plan §4.5, §4.6, §9).
 
 Only reads the photo folders: the raw files and their `.pp3` sidecars. Renders and the report go to the cache.
+The catalog is read for faces and never migrated, so code on an older branch can still open it.
 
 - **White balance (§4.6, decision 21):** the owner set a custom white balance by clicking something neutral. What
   that means in raw multipliers is measured, not modelled: the raw is rendered twice with no input profile and an
@@ -280,7 +281,8 @@ def run(
 ) -> tuple[list[EvalResult], Path]:
     """Evaluate the agents on the sidecars of these folders; returns the results and the JSON report's path."""
     refs = [r for folder in folders for r in references(folder)]
-    conn = catalog.connect(cfg.catalog_path) if cfg.catalog_path.is_file() else None
+    # Faces only: read the catalog at whatever schema it has, never migrate it.
+    conn = catalog.connect(cfg.catalog_path, migrate=False) if cfg.catalog_path.is_file() else None
     started = time.perf_counter()
     try:
         results = []
