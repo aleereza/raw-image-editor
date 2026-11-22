@@ -37,7 +37,7 @@
         <span>✗ Reject every frame</span><kbd>F</kbd>
       </button>
       <button onclick={run(act.clear)} disabled={!frames.some((f) => f.decision)}><span>Clear the burst</span><kbd>U</kbd></button>
-      <p class="note">Click the burst, or press <kbd>C</kbd>, to compare its frames and pick one.</p>
+      <p class="note">Double-click the burst, or press <kbd>C</kbd>, to compare its frames and pick one.</p>
     {:else if scope === "frame"}
       <h3>This frame</h3>
       <button class="big keep" class:on={photo?.decision === "keep"} onclick={run(act.keep)} disabled={!photo}>
