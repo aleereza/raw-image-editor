@@ -58,7 +58,7 @@ Rejected photos are dimmed, whoever rejected them. The mark replaces the decisio
 | F | a photo: reject; a burst: reject every frame | reject | reject this frame |
 | U | a photo: clear; a burst: clear every frame | clear | clear this frame |
 
-`A`, `D` and `?` work as before, and `M` (the focus map) and `Z` open the photo or frame in the loupe. After `G` or `F`, the grid moves to the next tile and the loupe to the next photo (after a pick, to the next tile); burst compare stays on the burst, so the result shows. `[` and `]` stay free for Phase 2's exposure keys. The action panel has a button for every key, and the guide (`?`) explains the marks, the filters and the burst tile.
+`A`, `D` and `?` work as before, and `M` (the focus map) and `Z` open the photo or frame in the loupe. After `G` or `F`, the grid moves to the next tile and the loupe to the next photo (after a pick, to the next tile); burst compare stays on the burst, so the result shows. `[` and `]` stay free for Phase 2's exposure keys. The action panel has a button for every key. It looks the same for a photo, a burst tile and a frame, in every view: the same buttons and labels in the same places, without notes, and disabled where they do nothing (the owner asked for this on 2026-11-22). The guide (`?`) explains the marks, the filters and the burst tile.
 
 The owner moved keep and pick from `P` to `G` and reject from `X` to `F` on 2026-11-22, and the focus map from `F` to `M` to make room; `P`, `Shift+P` and `X` do nothing now.
 
