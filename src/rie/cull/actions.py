@@ -120,29 +120,26 @@ def _rejected_by_app(frame: sqlite3.Row) -> bool:
     return _owner(frame) is None and frame["pile"] == "auto_reject"
 
 
-def pick(conn: sqlite3.Connection, image_id: int, *, keep_others: bool = False) -> list[int]:
-    """Pick a frame of its burst: it is kept and, unless `keep_others`, the burst's other frames are rejected.
+def pick(conn: sqlite3.Connection, image_id: int) -> list[int]:
+    """Pick a frame of its burst: it is kept, and the burst's open frames become the owner's rejects.
 
-    The other frames become the owner's rejects, including a frame the owner kept before, so picking another frame
-    moves the keep (ADR 0011). A frame the app already rejects on its own keeps the app's call: its final call is a
-    reject anyway, and the share decided automatically stays right. With `keep_others` (Shift in the UI) only the
-    picked frame changes, so several frames can be kept. Returns the picked frame's id, then the ids of the other
-    frames whose decision changed.
+    The frames the owner kept or rejected stay as they are, so picking another frame adds a keep, and moving the keep
+    takes a reject on the old one (ADR 0011). A frame the app already rejects on its own keeps the app's call: its
+    final call is a reject anyway, and the share decided automatically stays right. Returns the picked frame's id,
+    then the ids of the other frames whose decision changed.
     """
     image = _photo(conn, image_id)
-    others = []
-    if not keep_others:
-        others = [
-            f["image_id"]
-            for f in _burst_frames(conn, image_id)
-            if f["image_id"] != image_id and _owner(f) != "reject" and not _rejected_by_app(f)
-        ]
+    others = [
+        f["image_id"]
+        for f in _burst_frames(conn, image_id)
+        if f["image_id"] != image_id and _owner(f) is None and not _rejected_by_app(f)
+    ]
     now = catalog.now()
     with catalog.transaction(conn):
         _store(conn, image_id, "keep", now)
         for other in others:
             _store(conn, other, "reject", now)
-        _log(conn, image, "pick", "keep_others" if keep_others else "reject_others", None)
+        _log(conn, image, "pick", "reject_open", None)
     return [image_id, *others]
 
 
@@ -375,7 +372,7 @@ def done_culling(conn: sqlite3.Connection, cfg: Config, folder_id: int, *, train
                     call.model,
                     call.features,
                     call.burst_id,
-                    int(call.image_id in picked and call.final == "keep"),  # a later pick may have moved the keep
+                    int(call.image_id in picked and call.final == "keep"),  # it may have been rejected after the pick
                     now,
                 ),
             )

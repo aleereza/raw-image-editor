@@ -126,7 +126,7 @@ def test_decisions_done_and_restore(env):
 
 def test_picks_and_whole_burst_decisions(env):
     _cfg, _conn, client, _shoot, _top = env
-    assert client.post("/api/photos/2/pick", json={}).json() == {"ok": True, "changed": [2]}
+    assert client.post("/api/photos/2/pick").json() == {"ok": True, "changed": [2]}
     response = client.post("/api/photos/2/burst-decision", json={"decision": "reject"})
     assert response.json() == {"ok": True, "changed": [2]}  # a single photo is a burst of one
     assert client.post("/api/photos/1/burst-decision", json={"decision": "reject"}).json()["changed"] == []

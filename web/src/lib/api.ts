@@ -167,8 +167,7 @@ export const api = {
   decide: (id: number, decision: Decision, reason?: string) =>
     request<{ ok: boolean }>("POST", `/api/photos/${id}/decision`, { decision, reason: reason ?? null }),
   reason: (id: number, reason: string) => request<{ ok: boolean }>("POST", `/api/photos/${id}/reason`, { reason }),
-  pick: (id: number, keepOthers: boolean) =>
-    request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/pick`, { keep_others: keepOthers }),
+  pick: (id: number) => request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/pick`),
   decideBurst: (id: number, decision: "reject" | null) =>
     request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/burst-decision`, { decision }),
   donePreview: (id: number) =>

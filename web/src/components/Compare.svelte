@@ -3,7 +3,7 @@
   import { analysisFor, burstOf, markOf, markText, ui } from "../lib/state.svelte";
   import Mark from "./Mark.svelte";
 
-  let { photo, onselect, onpick }: { photo: Photo; onselect: (id: number) => void; onpick: (p: Photo, keepOthers: boolean) => void } = $props();
+  let { photo, onselect, onpick }: { photo: Photo; onselect: (id: number) => void; onpick: (p: Photo) => void } = $props();
 
   const frames = $derived(burstOf(photo, ui.photos));
   let analyses = $state<Record<number, Analysis>>({});
@@ -58,7 +58,7 @@
         class:active={frame.id === photo.id}
         class:rejected={mark.verdict === "reject"}
         onclick={(event) => click(event, frame)}
-        ondblclick={() => armed === frame.id && onpick(frame, false)}
+        ondblclick={() => armed === frame.id && onpick(frame)}
       >
         <div class="shot">
           <img src={urls.screen(frame)} alt={frame.name} />
@@ -111,8 +111,8 @@
     </div>
   {/if}
   <p class="hint muted">
-    <kbd>←</kbd><kbd>→</kbd> frame · <kbd>↑</kbd><kbd>↓</kbd> burst · <kbd>N</kbd> next burst to decide · <kbd>P</kbd> pick: keep it and reject the
-    others · <kbd>Shift</kbd>+<kbd>P</kbd> keep this one too · <kbd>X</kbd> reject · <kbd>U</kbd> clear · <kbd>Esc</kbd> back
+    <kbd>←</kbd><kbd>→</kbd> frame · <kbd>↑</kbd><kbd>↓</kbd> burst · <kbd>N</kbd> next burst to decide · <kbd>G</kbd> keep it and reject the open
+    frames · <kbd>F</kbd> reject · <kbd>U</kbd> clear · <kbd>Esc</kbd> back
   </p>
 </div>
 

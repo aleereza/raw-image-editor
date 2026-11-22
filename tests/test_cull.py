@@ -123,28 +123,23 @@ def decisions_of(conn):
     return dict(conn.execute("SELECT image_id, decision FROM decisions").fetchall())
 
 
-def test_picking_a_frame_rejects_the_rest_of_its_burst_and_moves_the_keep(folder):
+def test_picking_a_frame_rejects_the_open_frames_of_its_burst_and_adds_a_keep(folder):
     _cfg, conn, _shoot, _top = folder
     assert actions.pick(conn, 5) == [5, 4]  # frame 3 is the app's own reject (auto-reject) and stays the app's
     assert decisions_of(conn) == {5: "keep", 4: "reject"}
-    assert actions.pick(conn, 4) == [4, 5]  # picking another frame moves the keep
-    assert decisions_of(conn) == {4: "keep", 5: "reject"}
-    assert actions.pick(conn, 5, keep_others=True) == [5]  # Shift: keep a second frame
+    assert actions.pick(conn, 4) == [4]  # picking another frame adds a keep
     assert decisions_of(conn) == {4: "keep", 5: "keep"}
+    actions.set_decision(conn, 5, "reject")  # moving the keep: the owner rejects the old one
     actions.set_decision(conn, 3, "keep")  # the owner rescues the app's reject
-    assert actions.pick(conn, 4) == [4, 3, 5]  # the owner's other keeps become rejects, in shooting order
-    assert decisions_of(conn) == {3: "reject", 4: "keep", 5: "reject"}
-    assert actions.pick(conn, 4) == [4]  # nothing else changes
+    assert actions.pick(conn, 4) == [4]  # the owner's keeps and rejects stay as they are
+    assert decisions_of(conn) == {3: "keep", 4: "keep", 5: "reject"}
+    actions.set_decision(conn, 3, None)  # the app's own reject again
+    actions.set_decision(conn, 5, None)  # open again
+    assert actions.pick(conn, 4) == [4, 5]  # only the open frame becomes a reject
+    assert decisions_of(conn) == {3: None, 4: "keep", 5: "reject"}
     assert actions.pick(conn, 2) == [2]  # a single photo is a burst of one
     log = conn.execute("SELECT image_id, action, value FROM decision_log WHERE action = 'pick'").fetchall()
-    assert [tuple(r) for r in log] == [
-        (5, "pick", "reject_others"),
-        (4, "pick", "reject_others"),
-        (5, "pick", "keep_others"),
-        (4, "pick", "reject_others"),
-        (4, "pick", "reject_others"),
-        (2, "pick", "reject_others"),
-    ]
+    assert [tuple(r) for r in log] == [(i, "pick", "reject_open") for i in (5, 4, 4, 4, 2)]
 
 
 def test_rejecting_or_clearing_a_whole_burst(folder):
@@ -170,7 +165,8 @@ def test_after_picks_the_apps_own_rejects_count_as_decided_automatically(folder)
     cfg, conn, _shoot, _top = folder
     assert actions.done_preview(conn, cfg, 1).open_bursts == 1  # frames 4 and 5 are open, nothing is kept
     actions.pick(conn, 5)
-    actions.pick(conn, 4)  # moves the keep from 5 to 4
+    actions.pick(conn, 4)  # a second keep
+    actions.set_decision(conn, 5, "reject")  # moves the keep from 5 to 4
     preview = actions.done_preview(conn, cfg, 1)
     assert (preview.rejects, preview.undecided, preview.open_bursts) == (3, 0, 0)
     actions.done_culling(conn, cfg, 1, train=False)
@@ -179,7 +175,7 @@ def test_after_picks_the_apps_own_rejects_count_as_decided_automatically(folder)
     }
     assert outcomes[3] == ("reject", "accepted", 0)
     assert outcomes[4] == ("keep", "owner", 1)
-    assert outcomes[5] == ("reject", "owner", 0)  # picked first, but the keep moved away
+    assert outcomes[5] == ("reject", "owner", 0)  # picked first, then rejected
     m = actions.metrics(conn, 1)
     assert (m.automatic, m.changed) == (4, 0)  # photos 1, 2, 3 and 6 as the app sorted them
 
