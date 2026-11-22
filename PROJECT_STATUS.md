@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-21
+Last updated: 2026-11-22
 
 The state of the code. Notes about one installation, such as its photo drive and sample set, belong in the Git-ignored `local/` folder.
 
@@ -15,7 +15,8 @@ Phase 2 (plan §10) is built on two branches (2026-11-21): `claude/phase-2-agent
 - **Agents per photo:** geometry (lines on the as-shot render), white balance (linear raw, confirmed faces' skin), exposure (the as-shot render through the look's curve, faces first), colour (vibrance from chroma), baseline (noise reduction by effective ISO); per folder: harmonization per scene, routing by confidence, the neutral look, the owner's locks, QA on the edited render with one adjustment. Renders are cached by everything that decides their pixels.
 - **Looks:** neutral@1 by default; the look lab renders variations on contrast, warmth, saturation and lift, saves versioned looks, and uses a look for a photo or its scene.
 - **Sidecars:** created, rewritten while unchanged, or (the owner's own) backed up once and only added to; importing a sidecar the app wrote takes only the owner's changes.
-- **On the 29 samples:** 3.7 s per photo with four at a time; 38 % need no review; white balance changed on 21 and exposure on 26; no rendered face clipped; geometry abstained on every sample. The white balance agent has not been tested against the owner's picks (`rie eval` needs the owner's go-ahead to read real shoot folders). The exit check (≥ 70 % of kept golden-set photos without an override) is ready to run: the review page shows the share as "untouched".
+- **On the 29 samples:** 3.7 s per photo with four at a time; 38 % need no review; white balance changed on 21 and exposure on 26; no rendered face clipped; geometry abstained on every sample. The exit check (≥ 70 % of kept golden-set photos without an override) is ready to run: the review page shows the share as "untouched".
+- **Against the owner's own edits** (`rie eval` on 33 shoot folders, ADR 0013): the white balance agent's median error is 2.33° against 539 custom white balances (camera 2.50°, target 2.5°; 1.76° where it is sure), but what `rie edit` applies is more than 1° worse than the camera on 15 % of them. Straightening agrees with 309 of the owner's turns to 0.24° where it measures a roll, but finds lines on only 18 % of them, and vertical lines alone lean in 37 photos the owner left level. `rie eval` reads the catalog without migrating it.
 - **Limits:** every threshold is provisional until the golden set; GeoCalib is not used; edited previews take about four times the plan's hoped-for 1 s per photo; no output sharpening or hot-pixel filter; sidecars are written at export and on open in RawTherapee, not as soon as a photo is edited.
 
 ## Built (Phase 1)

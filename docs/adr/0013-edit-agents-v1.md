@@ -1,6 +1,6 @@
 # ADR 0013: Edit agents v1 — white balance model, tone keys, agents, routing, QA
 
-- **Status:** accepted; every threshold is provisional until the golden set exists (plan §9), and the white balance agent waits for the owner's manual picks (`rie eval`)
+- **Status:** accepted; every threshold is provisional until the golden set exists (plan §9); measured against the owner's own edits on 2026-11-22 (`rie eval`, below)
 - **Date:** 2026-11-21 (Phase 2, milestone 1)
 - **Code:** `src/rie/engine/wbmodel.py`, `src/rie/agents/`, `src/rie/edit.py`, `src/rie/edit_report.py`, `src/rie/evaluate.py`, `src/rie/render.py` (`cached_render`), `scripts/spikes/rt_tone.py`, `tests/test_agents.py`, `tests/test_edit.py`
 
@@ -66,7 +66,36 @@ On the 29 samples, the camera's JPEG against RawTherapee's render with the base 
 | Geometry | abstained on all 29: no family shot among them has lines that agree (a synthetic grid turned by 2° measures 2.0°) |
 | QA | adjusted 2 (a clipped face, neutrals); 1 still flagged (neutrals off by 4.5) |
 
-Viewed side by side, the edited previews of an underexposed indoor portrait, a backlit garden group and a flash group look natural; the white balance agent's tests need the owner's picks.
+Viewed side by side, the edited previews of an underexposed indoor portrait, a backlit garden group and a flash group look natural.
+
+### Against the owner's own edits (`rie eval`, 2026-11-22)
+
+The owner's RawTherapee sidecars in 33 shoot folders (2019–2026), read only: 539 photos with a custom white balance (458 sidecars from RawTherapee 5.8, 80 from 5.4, 1 from 5.13), and 309 with a turn (`[Rotation] Degree`) against as many the owner left level. White balance took 17 minutes (two probe renders per photo), straightening 14 minutes (one 2048 px render per photo), four at a time on the reference machine. The catalog had faces for one of these photos, so the skin cue hardly ran, and the folders have no Phase 1 scenes, so nothing was harmonized. The owner often pastes one white balance across a scene: 60 % of the picks share their exact values with another photo of the folder.
+
+White balance, as the angle to the owner's white:
+
+| | Median | Within 2.5° | 90th percentile |
+|---|---|---|---|
+| Camera | 2.50° | 51 % | 6.31° |
+| The agent's neutral estimate | 2.33° | 54 % | 6.57° |
+| The same on the 315 photos at confidence ≥ 0.8 | 1.76° (camera 2.19°) | 70 % | 4.93° |
+| What `rie edit` applies (warmth kept, routing) | 2.25° | 54 % | 5.98° |
+
+- The median meets plan §4.6's 2.5°, but the agent only matches the camera: what `rie edit` applies is closer to the owner's pick than the camera's on 34 % of the photos, the same on 51 % and more than 1° further on 15 %. Confidence ranks the misses: more than 1° worse on 13 % at confidence ≥ 0.95, on 25–28 % at 0.80–0.90.
+- Misses come by shoot. In two indoor family shoots the camera is 1.6–2.4° from the owner and the agent 4–6.4°, always cooler than the owner's pick; in another its green goes 0.1–0.2 past the owner's. Under tungsten light at a party (owner 2520 K, camera 3020 K) the agent comes within 0.5–3° but is unsure, so routing keeps it near the camera.
+- Sidecars from 2019 (RawTherapee 5.4): camera 5.27°, agent 2.35°. Warm light (estimate below 4200 K, 151 photos): neutral estimate 3.42°, with warmth kept 3.63°, camera 4.19°; the kept warmth lands 2.8 mired warmer than the owner's picks (median), so the degree of 0.8 is about right.
+
+Straightening; the owner's turns have a median of 1.49° and a 90th percentile of 3.21°, and 1 % are over 8°:
+
+| Lines found | Photos the owner turned | Median error there | Photos the owner left level |
+|---|---|---|---|
+| Both kinds agree | 20 | 0.28° | 1 |
+| Horizontals only | 13 | 0.58° | 1 |
+| Verticals only | 23 | 0.22° | 37 (median turn 1.37°) |
+| None, or they disagree (abstains) | 253 | 1.55° (the owner's turn) | 270 |
+
+- Where the agent measures a roll it agrees with the owner: the same direction on 95 %, median error 0.24°, inside plan §4.5's 0.3°. It finds lines on only 18 % of the photos the owner turned, so over all 309 the median error is 1.25° (14 % within 0.3°).
+- Vertical lines alone are not enough: they lean in 37 photos the owner left level (perspective, or tilts the owner kept) against 23 the owner turned. Routing holds most of them back: of the level photos, 21 would be turned halfway (median 0.47°) and queued, 18 queued as shot; of the turned ones, 2 are applied, 32 halfway and 22 queued as shot.
 
 ## Decision
 
@@ -88,8 +117,8 @@ Viewed side by side, the edited previews of an underexposed indoor portrait, a b
 
 ## Consequences for the plan
 
-- §4.6: RawTherapee's conversion is a verified model plus QA's neutral check, not a lookup table; old 5.8 sidecars use the 10-degree observer. The "≤ 2.5° median" metric needs the owner's picks (`rie eval`) or the calibration kit.
-- §4.5: GeoCalib (PyTorch) and a horizon detector are not in v1; on family photos the agent mostly abstains, which keeps deliberate tilts. The 0.3° metric can run against the owner's rotations with `rie eval`.
+- §4.6: RawTherapee's conversion is a verified model plus QA's neutral check, not a lookup table; old 5.8 sidecars use the 10-degree observer. Against 539 of the owner's picks the agent meets the "≤ 2.5° median" (2.33°) but barely beats the camera (2.50°); the owner's picks are per scene and often a little warm.
+- §4.5: GeoCalib (PyTorch) and a horizon detector are not in v1; on family photos the agent mostly abstains, which keeps deliberate tilts. Against 309 of the owner's turns it meets 0.3° where it measures a roll (0.24°) but measures one on only 18 %, and vertical lines alone are wrong more often than right.
 - §4.7: highlight compression needs a threshold, or it darkens everything; the neutral look's curve carries part of the brightness gap to the camera's JPEG.
 - §6 speed: edited previews cost about 3.7 s of wall time per photo with 4 at a time (two renders each), not the "about 1 s per image" the plan hoped for; RawTherapee's full-frame demosaicing dominates (ADR 0001).
 - §9: the exit check (≥ 70 % of kept golden-set photos need no override) is ready to run once the owner has culled and reviewed a golden set; on the hard Phase 0 samples, 38 % need no review.
