@@ -23,12 +23,19 @@
     }
   });
 
-  // One row per person (face track), one column per frame.
-  const tracks = $derived.by(() => {
+  // One row per face track the landmarker read, one column per frame. The people the burst's ranking counts come
+  // first; faces seen in only one frame, or small in the background, fold away under "Other faces" (ADR 0014). A
+  // folder grouped before ADR 0014 lists no people, and then every track gets a row, as before.
+  const faceTracks = $derived.by(() => {
     const ids = new Set<number>();
     for (const frame of frames) for (const face of analyses[frame.id]?.faces ?? []) if (face.track !== null && face.blink !== null) ids.add(face.track);
     return [...ids].sort((a, b) => a - b);
   });
+  const personTracks = $derived.by(() => {
+    const listed = frames.map((frame) => analyses[frame.id]?.burst.person_tracks).find((tracks) => Array.isArray(tracks));
+    return listed ? faceTracks.filter((track) => listed.includes(track)) : faceTracks;
+  });
+  const otherTracks = $derived(faceTracks.filter((track) => !personTracks.includes(track)));
 
   function faceOf(frame: Photo, track: number): Face | undefined {
     return analyses[frame.id]?.faces.find((f) => f.track === track);
@@ -68,28 +75,39 @@
       </button>
     {/each}
   </div>
-  {#if tracks.length}
-    <div class="strips">
-      {#each tracks as track, row}
-        <div class="strip">
-          <div class="who muted">person {row + 1}</div>
-          {#each frames as frame (frame.id)}
-            {@const face = faceOf(frame, track)}
-            <div class="cell" class:active={frame.id === photo.id}>
-              {#if face}
-                <img src={urls.face(frame.id, face.idx, frame.v)} alt="face, frame {frame.burst.position}" loading="lazy" />
-                <div class="face-badges">
-                  <span class="badge {eyes(face).cls}">{eyes(face).text}</span>
-                  {#if face.smile !== null}<span class="badge">smile {Math.round(face.smile * 100)}%</span>{/if}
-                  {#if face.sharpness !== null}<span class="badge" title="blur at the eyes (lower is sharper)">blur {face.sharpness.toFixed(2)}</span>{/if}
-                </div>
-              {:else}
-                <span class="muted">not found</span>
-              {/if}
+  {#snippet strip(track: number, who: string)}
+    <div class="strip">
+      <div class="who muted">{who}</div>
+      {#each frames as frame (frame.id)}
+        {@const face = faceOf(frame, track)}
+        <div class="cell" class:active={frame.id === photo.id}>
+          {#if face}
+            <img src={urls.face(frame.id, face.idx, frame.v)} alt="face, frame {frame.burst.position}" loading="lazy" />
+            <div class="face-badges">
+              <span class="badge {eyes(face).cls}">{eyes(face).text}</span>
+              {#if face.smile !== null}<span class="badge">smile {Math.round(face.smile * 100)}%</span>{/if}
+              {#if face.sharpness !== null}<span class="badge" title="blur at the eyes (lower is sharper)">blur {face.sharpness.toFixed(2)}</span>{/if}
             </div>
-          {/each}
+          {:else}
+            <span class="muted">not found</span>
+          {/if}
         </div>
       {/each}
+    </div>
+  {/snippet}
+  {#if faceTracks.length}
+    <div class="strips">
+      {#each personTracks as track, row (track)}
+        {@render strip(track, `person ${row + 1}`)}
+      {/each}
+      {#if otherTracks.length}
+        <details class="others">
+          <summary class="muted">Other faces ({otherTracks.length}): seen in one frame only, or small in the background</summary>
+          {#each otherTracks as track (track)}
+            {@render strip(track, "other face")}
+          {/each}
+        </details>
+      {/if}
     </div>
   {/if}
   <p class="hint muted">
@@ -115,5 +133,8 @@
   .cell { position: relative; border: 2px solid transparent; border-radius: 6px; background: #000; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .cell img { width: 100%; height: 220px; object-fit: contain; display: block; }
   .face-badges { position: absolute; bottom: 4px; left: 4px; display: flex; gap: 3px; flex-wrap: wrap; }
+  .others { margin-top: 10px; }
+  .others summary { cursor: pointer; font-size: 12px; }
+  .others .strip { opacity: 0.75; }
   .hint { margin-top: 10px; }
 </style>
