@@ -213,14 +213,17 @@
     }
   }
 
-  // G on a frame of a burst keeps it and rejects the burst's other frames (moving an earlier keep); Shift+G keeps it too.
-  async function pick(photo: Photo, keepOthers: boolean, advance = false) {
+  // G on a frame of a burst keeps it and rejects the burst's open frames. Frames already kept stay kept, so another G
+  // adds a keep.
+  async function pick(photo: Photo, advance = false) {
     const target = advance ? nextTile() : null;
     if (target !== null) select(target);
     try {
-      const result = await api.pick(photo.id, keepOthers);
+      const result = await api.pick(photo.id);
       for (const id of result.changed) update(id, { decision: id === photo.id ? "keep" : "reject" });
-      say(keepOthers ? `kept #${photo.burst.position} too` : `picked #${photo.burst.position}; the burst's other frames are rejected`);
+      const rejected = result.changed.length - 1;
+      const open = rejected === 1 ? "the open frame" : `the ${rejected} open frames`;
+      say(`kept #${photo.burst.position}` + (rejected ? ` and rejected ${open}` : ""));
     } catch (error) {
       say(`not saved: ${(error as Error).message}`);
     }
@@ -277,14 +280,9 @@
   const act: CullActions = {
     keep: () => {
       if (!current) return;
-      if (ui.mode === "compare") pick(current, false);
-      else if (isBurst) pick(current, false, true);
+      if (ui.mode === "compare") pick(current);
+      else if (isBurst) pick(current, true);
       else decide(current, "keep");
-    },
-    keepToo: () => {
-      if (!current) return;
-      if (isBurst) pick(current, true);
-      else act.keep();
     },
     reject: () => {
       if (!current) return;
@@ -337,7 +335,7 @@
     acceptPick: () => {
       if (!current) return;
       const best = frames.find((p) => p.burst.rank === 1);
-      if (frames.length > 1 && best) pick(best, false);
+      if (frames.length > 1 && best) pick(best);
       else say("not a burst: nothing to accept");
     },
     back: () => {
@@ -407,7 +405,7 @@
       Escape: act.back,
       Tab: event.shiftKey ? act.previousFilter : act.nextFilter,
       "?": act.help,
-      g: event.shiftKey ? act.keepToo : act.keep,
+      g: act.keep,
       n: event.shiftKey ? act.previousOpen : act.nextOpen,
       f: act.reject,
       u: act.clear,
@@ -556,7 +554,7 @@
       {#if ui.view === "folders"}
         <Folders />
       {:else if ui.mode === "compare" && current}
-        <Compare photo={current} onselect={(id: number) => select(id)} onpick={(p: Photo, keep: boolean) => pick(p, keep)} />
+        <Compare photo={current} onselect={(id: number) => select(id)} onpick={(p: Photo) => pick(p)} />
       {:else if tiles.length === 0}
         <p class="empty muted">
           {emptyText}

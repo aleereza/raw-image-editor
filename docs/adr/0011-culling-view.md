@@ -37,7 +37,7 @@ Rejected photos are dimmed, whoever rejected them. The mark replaces the decisio
 - A burst's tile shows its kept frame (the best-ranked one when several are kept), else the app's best frame, and while one of its frames is selected, that frame. Two stacked edges behind the tile mark it as a burst, replacing the `×N` count.
 - One dot per frame, in shooting order and in the frame's mark style, is followed by the counts ("1 keep · 2 reject", "1 reject · 3 open"). Bursts of more than eight frames show the counts only.
 - The tile's own mark is ✓ once a frame is kept and none is open (filled when a keep is the owner's), ✗ when every frame is rejected (filled when any of those rejects is the owner's), and the empty ring otherwise.
-- `G` on a frame picks it: the frame is kept and every other present frame becomes the owner's reject, including a frame the owner kept before, so `G` on another frame moves the keep. In the grid, `G` on a burst tile picks the frame it shows. `Shift+G` keeps a frame and leaves the others as they are.
+- `G` on a frame picks it: the frame is kept and the burst's open frames become the owner's rejects, while the frames the owner kept or rejected stay as they are, so `G` on another frame adds a keep, and `F` on the old keep moves it. In the grid, `G` on a burst tile picks the frame it shows. (Until 2026-11-22 a pick also rejected the owner's earlier keeps, so picking another frame moved the keep, and `Shift+P` kept a frame without touching the others. The owner chose adding keeps, which leaves `Shift+P` nothing to do.)
 - `F` on a burst tile in the grid rejects every frame, and `U` clears the owner's decision on every frame. In the loupe and in compare, `F` and `U` act on one frame. Whole-burst actions don't show the reason picker.
 - A frame the app already rejects on its own (no owner decision, Auto-reject) keeps the app's call when the owner picks another frame or rejects the whole burst. Its final call is a reject either way, and the share of photos decided automatically stays right.
 - A click on a tile selects it, a single photo or a burst alike, and a double-click opens it: a single photo in the loupe, a burst in burst compare. (The owner asked for this on 2026-11-20; a click on a burst first opened compare.) In compare, a double-click picks a frame only when both clicks land in compare, so double-clicking a burst tile in the grid never picks whichever frame ends up under the pointer.
@@ -55,25 +55,24 @@ Rejected photos are dimmed, whoever rejected them. The mark replaces the decisio
 | Esc | turns the filter off | back to the grid | back to where it came from |
 | Tab, Shift+Tab | next / previous filter | next / previous filter | next / previous filter, in the loupe |
 | G | a photo: keep; a burst: pick the frame shown | a photo: keep; a burst's frame: pick it | pick this frame |
-| Shift+G | a burst: keep the frame shown too | a burst's frame: keep it too | keep this one too |
 | F | a photo: reject; a burst: reject every frame | reject | reject this frame |
 | U | a photo: clear; a burst: clear every frame | clear | clear this frame |
 
 `A`, `D` and `?` work as before, and `M` (the focus map) and `Z` open the photo or frame in the loupe. After `G` or `F`, the grid moves to the next tile and the loupe to the next photo (after a pick, to the next tile); burst compare stays on the burst, so the result shows. `[` and `]` stay free for Phase 2's exposure keys. The action panel has a button for every key, and the guide (`?`) explains the marks, the filters and the burst tile.
 
-The owner moved keep and pick from `P` to `G` and reject from `X` to `F` on 2026-11-22, and the focus map from `F` to `M` to make room; `P` and `X` do nothing now.
+The owner moved keep and pick from `P` to `G` and reject from `X` to `F` on 2026-11-22, and the focus map from `F` to `M` to make room; `P`, `Shift+P` and `X` do nothing now.
 
 ### Server
 
-- `actions.pick` without `keep_others` rejects every other present frame of the burst, including the owner's keeps, and leaves the frames the app rejects on its own as they are. It returns only the frames whose decision changed.
+- `actions.pick` keeps the frame and rejects the burst's open frames, leaving the owner's keeps and rejects and the frames the app rejects on its own as they are, and `decision_log` records the pick with the value `reject_open`. Until 2026-11-22 it also rejected the owner's keeps (logged as `reject_others`), and with `keep_others` it left the other frames alone (logged as `keep_others`). It returns the picked frame, then the other frames whose decision changed.
 - `actions.decide_burst` and `POST /api/photos/{id}/burst-decision` (`{"decision": "reject"}` or `{"decision": null}`) reject every present frame of a burst, with the same exception, or clear the owner's decision on each. Each changed frame is logged in `decision_log` with the action "burst".
-- Done culling records a frame as picked (`cull_outcomes.picked`) only when it is kept in the end, since a later pick may have moved the keep away.
+- Done culling records a frame as picked (`cull_outcomes.picked`) only when it is kept in the end, since the owner may reject it after picking it.
 - Done culling's preview also counts the bursts that have open frames and no keep (`open_bursts`). The dialog says how many photos and bursts are still open, and that their open frames are kept.
 - Unchanged: the photos endpoint (the client derives the marks from `decision` and `pile`), the final calls, the piles, the trust dial, the metrics and the rules.
 
 ## Consequences for the plan
 
 - §2 and §6: the cull view is one grid of every photo with the piles as filters, instead of three pile tabs with Your call first; bursts are whole tiles instead of stacks per pile; the keyboard draft gains `N`, `PgUp` and `PgDn`, and `Tab` for the filters, and since 2026-11-22 has `G`, `F` and `M` for keep, reject and the focus map.
-- §4.4: picking another frame moves the keep, and the app's own rejects stay the app's. This replaces ADR 0009's pick rule, which left the owner's earlier keeps alone.
+- §4.4: the app's own rejects stay the app's when the owner picks a frame. From 2026-11-20 to 2026-11-22 picking another frame also moved the owner's keep, replacing ADR 0009's pick rule; since then a pick leaves the owner's earlier keeps alone again, as ADR 0009's did.
 - §10: Phase 1's pile tabs became this view.
 - §12: decision 18 stands, since the piles and the trust dial still decide what the app does on its own; they are now shown as marks and filters instead of tabs. Decision 24 records this view.

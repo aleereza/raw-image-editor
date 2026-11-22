@@ -57,10 +57,6 @@ class DecisionRequest(BaseModel):
     reason: str | None = None
 
 
-class PickRequest(BaseModel):
-    keep_others: bool = False
-
-
 class BurstDecisionRequest(BaseModel):
     decision: str | None
 
@@ -494,9 +490,9 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/photos/{image_id}/pick")
-    def pick(image_id: int, request: PickRequest, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
+    def pick(image_id: int, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
         try:
-            changed = actions.pick(conn, image_id, keep_others=request.keep_others)
+            changed = actions.pick(conn, image_id)
         except actions.CullError as exc:
             raise fail(exc) from exc
         return {"ok": True, "changed": changed}

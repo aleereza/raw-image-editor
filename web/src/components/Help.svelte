@@ -17,7 +17,6 @@
     ["Mouse back", "like Esc; with every photo shown, back to the folders", "like Esc", "like Esc"],
     ["Tab  Shift+Tab", "next / previous filter", "next / previous filter", "next / previous filter, in the loupe"],
     ["G", "a photo: keep; a burst: pick the frame shown", "a photo: keep; a burst's frame: pick it", "pick this frame"],
-    ["Shift+G", "a burst: keep the frame shown too", "a burst's frame: keep it too", "keep this one too"],
     ["F", "a photo: reject; a burst: reject every frame", "reject", "reject this frame"],
     ["U", "a photo: clear; a burst: clear every frame", "clear your decision", "clear this frame"],
     ["A", "accept the app's pick for the burst", "the same", "the same"],
@@ -89,7 +88,7 @@
 
       <h3>Burst compare <kbd>C</kbd></h3>
       <p>Every frame of the burst side by side, each with its mark and its problems ("eyes closed, 85% as sharp as the sharpest frame"). Below them, one strip per person seen in at least two frames, followed by where they are in the frame, never by who they are: eyes open or closed, the smile, and the blur at the eyes (lower is sharper). Faces seen in only one frame, or small in the background, fold away under Other faces.</p>
-      <p><kbd>G</kbd> picks a frame: it is kept, and every other frame becomes your reject, including a frame you kept before, so <kbd>G</kbd> on another frame moves the keep. Frames the app already rejects on its own keep the app's mark; Done culling rejects them anyway. <kbd>Shift</kbd>+<kbd>G</kbd> keeps a frame and leaves the others as they are. Compare stays on the burst so you see the result; <kbd>↓</kbd> or <kbd>N</kbd> moves on.</p>
+      <p><kbd>G</kbd> picks a frame: it is kept, and the burst's open frames become your rejects. Frames you kept stay kept, so <kbd>G</kbd> on another frame keeps it too; to move the keep instead, press <kbd>F</kbd> on the frame you kept before. Frames the app already rejects on its own keep the app's mark; Done culling rejects them anyway. Compare stays on the burst so you see the result; <kbd>↓</kbd> or <kbd>N</kbd> moves on.</p>
 
       <h3>The bottom bar</h3>
       <p>The file (<span class="muted">+ JPG</span> when the camera's JPEG is paired with it), its mark in words ("kept by you", "rejected by the app", "to decide"), then the app's suggestion, such as <b class="reject">reject</b> <span class="muted">(technical, 92% reject)</span>, and its reason. The kind says why: <b>technical</b> (focus or exposure), <b>duplicates</b> (almost the same as a better frame), <b>eyes</b>, <b>expression</b> (not the burst's best moment, or "best of 7") or <b>composition</b> (a face cut by the edge). The percentage is how likely you are to reject it. On the right: the frame's place in its burst and the app's rank for it ("burst #3/7, rank 2"), the exposure, and <span class="badge">RT edits</span> when RawTherapee already has edits for the photo; they are kept. For a frame of a burst, a second line gives every frame's mark: "#2 kept by you; #1 rejected by the app; #3, #4 rejected by you".</p>

@@ -1,6 +1,6 @@
 # ADR 0009: Culling suggestions, the three piles and the first personal model
 
-- **Status:** accepted; thresholds provisional (ADR 0008); ratings removed by ADR 0010 (`rules@2` drops rule 1, and the model drops the rating feature); the pick rule changed by ADR 0011 (picking another frame moves the owner's keep, and the app's own rejects stay the app's)
+- **Status:** accepted; thresholds provisional (ADR 0008); ratings removed by ADR 0010 (`rules@2` drops rule 1, and the model drops the rating feature); the pick rule changed by ADR 0011 (the app's own rejects stay the app's; from 2026-11-20 to 2026-11-22 picking another frame also moved the owner's keep, and since then a pick leaves the owner's keeps alone again, as here)
 - **Date:** 2026-11-18 (Phase 1)
 - **Code:** `src/rie/cull/` (`rules.py`, `piles.py`, `actions.py`, `model.py`), `tests/test_cull.py`
 

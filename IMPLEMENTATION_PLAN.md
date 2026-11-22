@@ -375,7 +375,7 @@ Each photo carries a one-line reason for its pile. When no frame of a burst is p
 - **The trust dial:** each kind of decision has its own switch, set either to "suggest" (the photo lands in your call, with a suggestion) or "automatic" (it goes straight to its pile). The kinds are technical failures, duplicates, closed eyes, expression and moment, and composition.
   - At first, only technical failures and clearly worse duplicates are automatic. Expression and moment stay on "suggest", as you asked.
   - The app proposes switching a kind to automatic once it agreed with your final decision at least 95% of the time over your last few folders. You make the switch.
-- **Picking in a burst:** choosing a frame marks the rest of the burst as rejects, so choosing another frame moves the keep; hold Shift to keep more than one. Frames the app already rejects on its own stay the app's call (ADR 0011).
+- **Picking in a burst:** choosing a frame keeps it and marks the burst's undecided frames as rejects, so choosing another frame keeps it too, and rejecting the first one moves the keep. Frames the app already rejects on its own stay the app's call (ADR 0011).
 - **Done culling:** when you press it, the app shows how many rejects there are and how much space they take. They then move, with their sidecars and paired camera JPEGs, to the drive's trash, where the app or your file manager can restore them (§3.5). Everything you kept goes on to editing. Until then a reject is just a flag you can undo, and rejected frames stay visible in burst compare.
 - **Metrics, shown per folder:** the share of photos decided automatically, how often you changed the app's sort, and the minutes you spent culling.
 - **Initial targets:** after about five folders, half the photos are decided automatically with ≥ 95% agreement, and Claude's suggestion is your pick in ≥ 60% of bursts.
@@ -833,7 +833,7 @@ Built on branch `claude/phase-1-culling` and waiting for your review and a first
 | 21 | Photo history | Not used for learning; the culling model learns from new folders, and old manual WB picks only test the WB agent | v0.5 | §4.6, §4.11 |
 | 22 | Looks | You build named looks for different scenarios in the look lab; neutral until then | v0.5 | §4.12 |
 | 23 | Ratings | None: the app neither rates photos nor reads RawTherapee's ratings | ADR 0010 | §3.3, §6 |
-| 24 | Culling view | Every photo in one grid by scene, each burst one tile; a mark on every photo says what Done culling does and who decided; the piles become filters; `G` moves a burst's keep, `Shift+G` adds one, and a whole burst can be rejected at once | ADR 0011 | §4.4, §6 |
+| 24 | Culling view | Every photo in one grid by scene, each burst one tile; a mark on every photo says what Done culling does and who decided; the piles become filters; `G` keeps a burst's frame and rejects its open frames, so each `G` adds a keep, and a whole burst can be rejected at once | ADR 0011 | §4.4, §6 |
 
 **Still open:** nothing blocking. Backups wait for the NAS: once it's there, the app can copy each finished folder to it and verify the copy.
 
