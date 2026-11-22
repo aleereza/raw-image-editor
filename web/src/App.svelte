@@ -174,7 +174,7 @@
     if (photo) Object.assign(photo, change);
   }
 
-  // Where the grid moves on to after P or X: the next tile.
+  // Where the grid moves on to after G or F: the next tile.
   function nextTile(): number | null {
     return tiles[tileIndex + 1]?.photo.id ?? null;
   }
@@ -213,7 +213,7 @@
     }
   }
 
-  // P on a frame of a burst keeps it and rejects the burst's other frames (moving an earlier keep); Shift+P keeps it too.
+  // G on a frame of a burst keeps it and rejects the burst's other frames (moving an earlier keep); Shift+G keeps it too.
   async function pick(photo: Photo, keepOthers: boolean, advance = false) {
     const target = advance ? nextTile() : null;
     if (target !== null) select(target);
@@ -226,7 +226,7 @@
     }
   }
 
-  // X or U on a burst tile in the grid: reject every frame, or clear every frame.
+  // F or U on a burst tile in the grid: reject every frame, or clear every frame.
   async function decideBurst(photo: Photo, decision: "reject" | null, advance: boolean) {
     const target = advance ? nextTile() : null;
     if (target !== null) select(target);
@@ -407,12 +407,12 @@
       Escape: act.back,
       Tab: event.shiftKey ? act.previousFilter : act.nextFilter,
       "?": act.help,
-      p: event.shiftKey ? act.keepToo : act.keep,
+      g: event.shiftKey ? act.keepToo : act.keep,
       n: event.shiftKey ? act.previousOpen : act.nextOpen,
-      x: act.reject,
+      f: act.reject,
       u: act.clear,
       z: act.zoom,
-      f: act.focusMap,
+      m: act.focusMap,
       c: act.compare,
       a: act.acceptPick,
       d: act.timings,

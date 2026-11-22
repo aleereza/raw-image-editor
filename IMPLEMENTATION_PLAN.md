@@ -557,10 +557,10 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 |---|---|---|---|
 | ← → | previous / next photo or burst (in compare: frame) | `\` | before / after |
 | ↑ ↓ | row above / below (in compare: burst) | `[` `]` | exposure −/+ 0.15 EV |
-| P X U | keep / reject / unflag; on a burst tile, P picks the frame shown and X and U act on every frame | `,` `.` | cooler / warmer |
+| G F U | keep / reject / unflag; on a burst tile, G picks the frame shown and F and U act on every frame | `,` `.` | cooler / warmer |
 | 1–5 | quick reason, when the picker shows | `{` `}` | rotate −/+ 0.1° |
 | Z | 100% on eyes / AF point | R | reset parameter to as-shot |
-| F | focus heatmap | L | lock parameter |
+| M | focus heatmap | L | lock parameter |
 | C | burst compare | E | open in RawTherapee |
 | A | accept Claude's burst suggestion | ? | help |
 | N | next photo or burst to decide | | |
@@ -833,7 +833,7 @@ Built on branch `claude/phase-1-culling` and waiting for your review and a first
 | 21 | Photo history | Not used for learning; the culling model learns from new folders, and old manual WB picks only test the WB agent | v0.5 | §4.6, §4.11 |
 | 22 | Looks | You build named looks for different scenarios in the look lab; neutral until then | v0.5 | §4.12 |
 | 23 | Ratings | None: the app neither rates photos nor reads RawTherapee's ratings | ADR 0010 | §3.3, §6 |
-| 24 | Culling view | Every photo in one grid by scene, each burst one tile; a mark on every photo says what Done culling does and who decided; the piles become filters; `P` moves a burst's keep, `Shift+P` adds one, and a whole burst can be rejected at once | ADR 0011 | §4.4, §6 |
+| 24 | Culling view | Every photo in one grid by scene, each burst one tile; a mark on every photo says what Done culling does and who decided; the piles become filters; `G` moves a burst's keep, `Shift+G` adds one, and a whole burst can be rejected at once | ADR 0011 | §4.4, §6 |
 
 **Still open:** nothing blocking. Backups wait for the NAS: once it's there, the app can copy each finished folder to it and verify the copy.
 

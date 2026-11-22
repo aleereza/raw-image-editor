@@ -30,32 +30,32 @@
     {#if scope === "burst" && photo}
       <h3>This burst</h3>
       <button class="big keep" class:on={photo.decision === "keep"} onclick={run(act.keep)}>
-        <span>✓ Keep the frame shown (#{photo.burst.position})</span><kbd>P</kbd>
+        <span>✓ Keep the frame shown (#{photo.burst.position})</span><kbd>G</kbd>
       </button>
       <p class="note">Picks it: the burst's other frames are rejected.</p>
       <button class="big reject" class:on={frames.every((f) => markOf(f).verdict === "reject")} onclick={run(act.reject)}>
-        <span>✗ Reject every frame</span><kbd>X</kbd>
+        <span>✗ Reject every frame</span><kbd>F</kbd>
       </button>
       <button onclick={run(act.clear)} disabled={!frames.some((f) => f.decision)}><span>Clear the burst</span><kbd>U</kbd></button>
       <p class="note">Click the burst, or press <kbd>C</kbd>, to compare its frames and pick one.</p>
     {:else if scope === "frame"}
       <h3>This frame</h3>
       <button class="big keep" class:on={photo?.decision === "keep"} onclick={run(act.keep)} disabled={!photo}>
-        <span>✓ Pick this frame</span><kbd>P</kbd>
+        <span>✓ Pick this frame</span><kbd>G</kbd>
       </button>
       <p class="note">Keeps it and rejects the burst's other frames, including one you kept before.</p>
-      <button onclick={run(act.keepToo)} disabled={!photo}><span>✓ Keep this one too</span><kbd>⇧P</kbd></button>
+      <button onclick={run(act.keepToo)} disabled={!photo}><span>✓ Keep this one too</span><kbd>⇧G</kbd></button>
       <button class="big reject" class:on={photo?.decision === "reject"} onclick={run(act.reject)} disabled={!photo}>
-        <span>✗ Reject</span><kbd>X</kbd>
+        <span>✗ Reject</span><kbd>F</kbd>
       </button>
       <button onclick={run(act.clear)} disabled={!photo?.decision}><span>Clear my decision</span><kbd>U</kbd></button>
     {:else}
       <h3>This photo</h3>
       <button class="big keep" class:on={photo?.decision === "keep"} onclick={run(act.keep)} disabled={!photo}>
-        <span>✓ Keep</span><kbd>P</kbd>
+        <span>✓ Keep</span><kbd>G</kbd>
       </button>
       <button class="big reject" class:on={photo?.decision === "reject"} onclick={run(act.reject)} disabled={!photo}>
-        <span>✗ Reject</span><kbd>X</kbd>
+        <span>✗ Reject</span><kbd>F</kbd>
       </button>
       <button onclick={run(act.clear)} disabled={!photo?.decision}><span>Clear my decision</span><kbd>U</kbd></button>
     {/if}
@@ -76,7 +76,7 @@
     <button onclick={run(act.open)} disabled={ui.mode === "grid" && !photo}>
       <span>{ui.mode !== "grid" ? "Back to the grid" : burst ? "Open burst compare" : "Open in the loupe"}</span><kbd>Enter</kbd>
     </button>
-    <button class:on={ui.heat} onclick={run(act.focusMap)} disabled={!photo}><span>Focus map</span><kbd>F</kbd></button>
+    <button class:on={ui.heat} onclick={run(act.focusMap)} disabled={!photo}><span>Focus map</span><kbd>M</kbd></button>
     <button class:on={ui.zoom} onclick={run(act.zoom)} disabled={!photo}><span>100 % on the eyes</span><kbd>Z</kbd></button>
   </section>
 

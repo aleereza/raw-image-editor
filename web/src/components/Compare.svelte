@@ -111,8 +111,8 @@
     </div>
   {/if}
   <p class="hint muted">
-    <kbd>←</kbd><kbd>→</kbd> frame · <kbd>↑</kbd><kbd>↓</kbd> burst · <kbd>N</kbd> next burst to decide · <kbd>P</kbd> pick: keep it and reject the
-    others · <kbd>Shift</kbd>+<kbd>P</kbd> keep this one too · <kbd>X</kbd> reject · <kbd>U</kbd> clear · <kbd>Esc</kbd> back
+    <kbd>←</kbd><kbd>→</kbd> frame · <kbd>↑</kbd><kbd>↓</kbd> burst · <kbd>N</kbd> next burst to decide · <kbd>G</kbd> pick: keep it and reject the
+    others · <kbd>Shift</kbd>+<kbd>G</kbd> keep this one too · <kbd>F</kbd> reject · <kbd>U</kbd> clear · <kbd>Esc</kbd> back
   </p>
 </div>
 
