@@ -4,10 +4,12 @@ Line segments (OpenCV's LSD) on the as-shot render, which RawTherapee has alread
 feed length-weighted histograms of how far near-horizontal and near-vertical lines lean. Verticals far from the
 middle column and horizontals far from the middle row lean through perspective rather than roll, so they count
 less. Each histogram's peak is an estimate of the roll. As the plan's fusion rule asks, horizontals and verticals
-that agree within AGREE_AXES give a confident roll; one kind of line alone gives a cautious one (applied halfway and
-reviewed); lines that disagree, or too little line, abstain. Photos dominated by a face (portraits and close-ups)
-count lines less. Stripes in clothing and other textures make peaks of their own, which the agreement test catches.
-GeoCalib and a separate horizon detector (plan §4.5, items 2 and 3) are not used yet.
+that agree within AGREE_AXES give a confident roll; horizontals alone give a cautious one (applied halfway and
+reviewed); lines that disagree, or too little line, abstain. Vertical lines alone are measured but not acted on:
+they lean whenever the camera points up or down, and against the owner's own straightening they suggested a turn
+on more photos the owner left level than on photos the owner turned (ADR 0016). Photos dominated by a face
+(portraits and close-ups) count lines less. Stripes in clothing and other textures make peaks of their own, which
+the agreement test catches. GeoCalib and a separate horizon detector (plan §4.5, items 2 and 3) are not used yet.
 
 Policy: a roll under MIN_ROLL is left alone; up to MAX_ROLL it is corrected; above that it is probably deliberate
 and only flagged. RawTherapee's AutoFill enlarges the turned picture to hide the corners (ADR 0001), so no crop is
@@ -26,7 +28,7 @@ from . import colorspace as cs
 from .context import Face, ImageContext
 from .proposal import Proposal
 
-VERSION = "geometry@1"
+VERSION = "geometry@2"
 MIN_ROLL, MAX_ROLL = 0.2, 8.0  # degrees (plan §4.5)
 WINDOW = 10.0  # degrees around horizontal and vertical that count as lines to straighten by
 BANDWIDTH = 0.15  # degrees, kernel of the lean histogram
@@ -35,6 +37,8 @@ MIN_SUPPORT = 0.3  # agreeing line length per kind of line, in frame diagonals, 
 SINGLE_SUPPORT = 1.0  # agreeing length needed when only one kind of line gives an estimate
 STRONG_SUPPORT = 3.0  # agreeing length at which the line evidence is full
 AGREE_AXES = 0.5  # degrees within which horizontals and verticals agree
+ACT_ON = ("both", "horizontals")  # the line evidence the agent turns a photo on
+SINGLE_FACTOR = 0.7  # confidence factor for horizontals alone (both kinds agreeing: 0.95)
 FACE_DOMINANT = 0.06  # a trusted face larger than this share of the frame makes the photo a portrait
 WORK_EDGE = 1280
 MARGIN = 0.01  # a face must stay this far (share of the frame) inside the visible area
@@ -64,18 +68,23 @@ def face_kept(face: Face, angle: float, width: float, height: float) -> bool:
     return all(visible(c, angle, width, height) for c in corners)
 
 
-def leans(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def segments(gray: np.ndarray) -> np.ndarray:
+    """Line segments (x1, y1, x2, y2 in pixels) that OpenCV's LSD finds in an 8-bit grayscale image."""
+    found = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD).detect(gray)[0]
+    if found is None:
+        return np.zeros((0, 4))
+    return found.reshape(-1, 4).astype(np.float64)
+
+
+def leans(seg: np.ndarray, shape: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Lean (degrees, the roll that would make each line level or plumb) and weight of near-axis segments.
 
     Image coordinates point down, so a horizontal line falling to the right leans by a positive angle, and turning
     the picture counter-clockwise by that angle (RawTherapee's positive `[Rotation] Degree`) levels it.
     """
-    detector = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
-    found = detector.detect(gray)[0]
-    if found is None:
+    if not len(seg):
         return np.zeros(0), np.zeros(0), np.zeros(0, dtype=bool)
-    seg = found.reshape(-1, 4).astype(np.float64)
-    h, w = gray.shape
+    h, w = shape[:2]
     dx, dy = seg[:, 2] - seg[:, 0], seg[:, 3] - seg[:, 1]
     length = np.hypot(dx, dy)
     angle = np.degrees(np.arctan2(dy, dx))
@@ -107,7 +116,12 @@ def _peak(lean: np.ndarray, weight: np.ndarray) -> tuple[float | None, float]:
 def estimate(gray: np.ndarray) -> tuple[float | None, float, str]:
     """(roll, agreeing line length in diagonals, which lines: "both", "horizontals", "verticals", "disagree" or
     "none") from a grayscale image."""
-    lean, weight, horizontal = leans(gray)
+    return estimate_lines(segments(gray), gray.shape)
+
+
+def estimate_lines(seg: np.ndarray, shape: tuple[int, ...]) -> tuple[float | None, float, str]:
+    """`estimate` from line segments already found in an image of this shape."""
+    lean, weight, horizontal = leans(seg, shape)
     h_roll, h_support = _peak(lean[horizontal], weight[horizontal])
     v_roll, v_support = _peak(lean[~horizontal], weight[~horizontal])
     has_h = h_roll is not None and h_support >= MIN_SUPPORT
@@ -138,8 +152,11 @@ def propose(ctx: ImageContext) -> Proposal:
     roll, support, lines = estimate(gray_of(ctx.before))
     as_shot = {"geometry": {"rotate_deg": 0.0}}
     evidence = {"roll": None if roll is None else round(roll, 3), "support": round(support, 2), "lines": lines}
-    if roll is None:
-        why = "level and plumb lines disagree" if lines == "disagree" else "too few straight lines to judge"
+    if roll is None or lines not in ACT_ON:
+        why = {
+            "disagree": "level and plumb lines disagree",
+            "verticals": f"only vertical lines ({roll or 0.0:+.1f} degrees), which also lean when the camera tilts",
+        }.get(lines, "too few straight lines to judge")
         return Proposal(
             VERSION,
             {"geometry": {"rotate_deg": 0.0}},
@@ -149,7 +166,7 @@ def propose(ctx: ImageContext) -> Proposal:
             evidence=evidence,
             abstain=True,
         )
-    confidence = min(1.0, support / STRONG_SUPPORT) ** 0.5 * (0.95 if lines == "both" else 0.7)
+    confidence = min(1.0, support / STRONG_SUPPORT) ** 0.5 * (0.95 if lines == "both" else SINGLE_FACTOR)
     biggest = max((f.box[2] * f.box[3] for f in ctx.trusted_faces), default=0.0)
     if biggest > FACE_DOMINANT:
         confidence *= 0.6  # a portrait's lines are background; its tilt is often deliberate

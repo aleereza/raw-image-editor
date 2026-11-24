@@ -1,4 +1,4 @@
-# ADR 0014: Review, export, looks and the RawTherapee round trip
+# ADR 0015: Review, export, looks and the RawTherapee round trip
 
 - **Status:** accepted
 - **Date:** 2026-11-21 (Phase 2, milestone 2)

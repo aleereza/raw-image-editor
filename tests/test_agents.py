@@ -265,6 +265,30 @@ def test_geometry_measures_a_known_turn():
     assert roll == pytest.approx(2.0, abs=0.15)  # turned clockwise on screen: turn back counter-clockwise
 
 
+def _turned_lines(horizontal: bool, vertical: bool) -> np.ndarray:
+    """A linear render of dark lines on grey, turned 2 degrees clockwise."""
+    grid = np.full((800, 1200), 160, dtype=np.uint8)
+    for y in range(100, 800, 100) if horizontal else ():
+        cv2.line(grid, (50, y), (1150, y), 30, 3)
+    for x in range(150, 1200, 150) if vertical else ():
+        cv2.line(grid, (x, 50), (x, 750), 30, 3)
+    turned = cv2.warpAffine(grid, cv2.getRotationMatrix2D((600, 400), -2.0, 1.0), (1200, 800), borderValue=160)
+    return cs.decode_srgb(np.repeat(turned[..., None], 3, axis=2) / 255.0).astype(np.float32)
+
+
+def test_vertical_lines_alone_are_measured_but_not_acted_on():
+    ctx = ImageContext(name="x.NEF", path=None, meta={})  # type: ignore[arg-type]
+    ctx.before = _turned_lines(horizontal=False, vertical=True)
+    p = geometry.propose(ctx)
+    assert p.evidence["lines"] == "verticals" and p.evidence["roll"] == pytest.approx(2.0, abs=0.15)
+    assert p.abstain and p.params == {"geometry": {"rotate_deg": 0.0}}
+    assert not p.route().review  # nothing to review either
+    ctx.before = _turned_lines(horizontal=True, vertical=False)
+    p = geometry.propose(ctx)
+    assert p.evidence["lines"] == "horizontals" and not p.abstain
+    assert p.params["geometry"]["rotate_deg"] == pytest.approx(2.0, abs=0.15)
+
+
 # --- harmonization -----------------------------------------------------------------------------------------------
 
 

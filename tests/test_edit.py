@@ -114,6 +114,33 @@ def test_eval_compares_a_sidecar_white_balance_and_reads_the_folder_only(tmp_pat
         assert cli.main(["--config", str(settings), "eval", str(shoot), "--agent", "wb", "--workers", "1"]) == 0
     assert seen.violations() == [] and snapshot(shoot) == before
     report = Path(capsys.readouterr().out.strip().splitlines()[-1].removeprefix("report: "))
-    row = json.loads(report.read_text())["results"][0]["rows"][0]
+    data = json.loads(report.read_text())
+    row = data["results"][0]["rows"][0]
     assert abs(row["owner"]["temp"] - 5600) < 60  # the probe measures what RawTherapee applies
-    assert row["agent_error"] >= 0 and row["camera_error"] >= 0
+    assert row["folder"] == 0 and row["scene"] is not None  # folders by number; scenes from the metadata
+    for key in ("estimate_error", "applied_neutral_error", "applied_error", "camera_error"):
+        assert row[key] >= 0
+    assert data["agents"] == {"wb": evaluate.wb.VERSION, "geometry": "geometry@2", "harmonize": "harmonize@1"}
+
+
+def _ref(folder: str, name: str, turn: float) -> evaluate.Reference:
+    return evaluate.Reference(Path(folder), name, {"Rotation": {"Degree": str(turn)}} if turn else {})
+
+
+def test_eval_takes_as_many_level_photos_as_turned_ones_from_each_folder():
+    refs = [_ref("a", f"A{i:02d}.NEF", 1.5 if i in (3, 7) else 0.0) for i in range(20)]
+    refs += [_ref("b", f"B{i:02d}.NEF", 0.0) for i in range(5)]  # nothing turned: nothing taken
+    refs += [_ref("c", f"C{i:02d}.NEF", -2.0 if i else 0.0) for i in range(4)]  # three turned, one level
+    sample = evaluate.level_sample(refs)
+    assert [r.name for r in sample] == ["A05.NEF", "A15.NEF", "C00.NEF"]  # spread through the folder
+
+
+def test_eval_groups_scenes_from_metadata():
+    meta = {
+        "A.NEF": {"capture_time": "2026-05-01T10:00:00.00", "flash_fired": False, "light_value": 9.0},
+        "B.NEF": {"capture_time": "2026-05-01T10:01:00.00", "flash_fired": False, "light_value": 9.3},
+        "C.NEF": {"capture_time": "2026-05-01T10:01:05.00", "flash_fired": True, "light_value": 9.3},  # flash on
+        "D.NEF": {"capture_time": "2026-05-01T10:30:00.00", "flash_fired": True, "light_value": 9.3},  # long gap
+    }
+    scenes = evaluate.scenes(meta)
+    assert scenes["A.NEF"] == scenes["B.NEF"] != scenes["C.NEF"] != scenes["D.NEF"]

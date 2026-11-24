@@ -1,6 +1,6 @@
 # ADR 0013: Edit agents v1 — white balance model, tone keys, agents, routing, QA
 
-- **Status:** accepted; every threshold is provisional until the golden set exists (plan §9); measured against the owner's own edits on 2026-11-22 (`rie eval`, below)
+- **Status:** accepted; every threshold is provisional until the golden set exists (plan §9); measured against the owner's own edits on 2026-11-22 (`rie eval`, below). ADR 0016 tunes on half of those folders: `geometry@2` no longer acts on vertical lines alone, `rie eval` now scores what `rie edit` applies, and the old picks cannot judge the warm-light degree, since they are neutral clicks.
 - **Date:** 2026-11-21 (Phase 2, milestone 1)
 - **Code:** `src/rie/engine/wbmodel.py`, `src/rie/agents/`, `src/rie/edit.py`, `src/rie/edit_report.py`, `src/rie/evaluate.py`, `src/rie/render.py` (`cached_render`), `scripts/spikes/rt_tone.py`, `tests/test_agents.py`, `tests/test_edit.py`
 
