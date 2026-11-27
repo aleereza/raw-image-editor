@@ -111,8 +111,8 @@
     </div>
   {/if}
   <p class="hint muted">
-    <kbd>←</kbd><kbd>→</kbd> frame · <kbd>↑</kbd><kbd>↓</kbd> burst · <kbd>N</kbd> next burst to decide · <kbd>G</kbd> keep it and reject the open
-    frames · <kbd>F</kbd> reject · <kbd>U</kbd> clear · <kbd>Esc</kbd> back
+    <kbd>←</kbd><kbd>→</kbd> frame, then on past the burst · <kbd>↑</kbd><kbd>↓</kbd> photo or burst · <kbd>N</kbd> next to decide · <kbd>G</kbd> keep
+    it and reject the open frames · <kbd>F</kbd> reject · <kbd>U</kbd> clear · <kbd>C</kbd> this frame in the loupe · <kbd>Esc</kbd> back to the grid
   </p>
 </div>
 

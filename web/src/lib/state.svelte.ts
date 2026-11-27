@@ -108,7 +108,6 @@ export const ui = $state({
   photos: [] as Photo[],
   filter: null as Filter | null, // null: every photo
   currentId: null as number | null,
-  compareFrom: "grid" as "grid" | "loupe", // where Esc and C in burst compare go back to
   heat: false,
   zoom: false,
   help: false,

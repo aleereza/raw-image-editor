@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, onReachability, type Photo } from "./lib/api";
-  import { startTiming, isDecoded } from "./lib/images";
+  import { startTiming, isDecoded, load } from "./lib/images";
   import { urls } from "./lib/api";
   import {
     FILTERS,
@@ -70,40 +70,60 @@
 
   const clamp = (i: number, n: number) => Math.min(Math.max(i, 0), n - 1);
 
+  // The shown tile a photo belongs to.
+  const tileOf = (id: number | null) => tiles.find((t) => t.frames.some((p) => p.id === id));
+
+  // Only the loupe times flips and zooms: it stops the clock once the photo is on screen.
   function select(id: number | null, timed = true) {
     if (id === null || id === ui.currentId) return;
     const photo = ui.photos.find((p) => p.id === id);
-    if (timed && photo && ui.mode !== "grid") {
+    if (timed && photo && ui.mode === "loupe") {
       startTiming(ui.zoom ? "zoom" : "flip", isDecoded(ui.zoom ? urls.full(photo) : urls.screen(photo)));
     }
     ui.currentId = id;
   }
 
+  // The loupe and burst compare are one walk in shooting order: a burst shows in compare, a single photo in the loupe.
+  function showTile(tile: Tile) {
+    if (tile.frames.length > 1) enterCompare();
+    else ui.mode = "loupe";
+  }
+
+  // Selects a photo. In the loupe and compare, a move onto another tile shows it as the walk does; within a tile the
+  // view stays, so a burst's frames opened in the loupe (C, M or Z in compare) go on in the loupe. The grid stays.
+  function moveTo(id: number | null) {
+    if (id === null) return;
+    const tile = tileOf(id);
+    if (ui.mode !== "grid" && tile && tile.key !== currentTile?.key) showTile(tile);
+    select(id);
+  }
+
   // Moving onto a tile selects its cover; staying on the same tile keeps the frame it shows.
   function selectTile(tile: Tile | undefined) {
-    if (tile && tile !== currentTile) select(tile.photo.id);
+    if (tile && tile.key !== currentTile?.key) moveTo(tile.photo.id);
   }
 
-  // ← →: tiles in the grid, every frame in the loupe, the burst's frames in compare.
+  // Where ← (-1) or → (1) goes from a photo in the loupe or compare: the next frame of its burst, else the next tile,
+  // onto a burst's first frame going forward and its last going back.
+  function walk(photo: Photo | null, delta: number): number | null {
+    const burst = photo ? burstOf(photo, ui.photos) : [];
+    const i = burst.findIndex((p) => p.id === photo?.id);
+    if (i >= 0 && burst[i + delta]) return burst[i + delta].id;
+    const at = tiles.findIndex((t) => t.frames.some((p) => p.id === photo?.id));
+    const tile = at < 0 ? tiles[0] : tiles[at + delta];
+    if (!tile) return null;
+    return (at >= 0 && delta < 0 ? tile.frames[tile.frames.length - 1] : tile.frames[0]).id;
+  }
+
+  // ← →: tiles in the grid; in the loupe and compare, the walk.
   function step(delta: number) {
-    if (ui.mode === "compare") {
-      if (!current) return;
-      const i = frames.findIndex((p) => p.id === current.id);
-      select(frames[clamp(i + delta, frames.length)]?.id ?? null);
-    } else if (ui.mode === "grid") {
-      selectTile(tiles[clamp(tileIndex + delta, tiles.length)]);
-    } else {
-      const i = items.findIndex((p) => p.id === ui.currentId);
-      select(items[clamp(i + delta, items.length)]?.id ?? null);
-    }
+    if (ui.mode === "grid") selectTile(tiles[clamp(tileIndex + delta, tiles.length)]);
+    else moveTo(walk(current, delta));
   }
 
-  // ↑ ↓ in the loupe: the previous or next tile; in compare: the previous or next burst.
-  function tileStep(delta: number, burstsOnly: boolean) {
-    for (let i = tileIndex + delta; i >= 0 && i < tiles.length; i += delta) {
-      if (!burstsOnly || tiles[i].frames.length > 1) return selectTile(tiles[i]);
-    }
-    if (burstsOnly) say(delta > 0 ? "no burst after this one" : "no burst before this one");
+  // ↑ ↓ in the loupe and compare: the previous or next photo or burst.
+  function tileStep(delta: number) {
+    selectTile(tiles[tileIndex + delta]);
   }
 
   // ↑ ↓ in the grid: the nearest tile in the row above or below on screen, across scene breaks.
@@ -132,24 +152,25 @@
     else say("this is the last scene");
   }
 
-  // N, Shift+N: the next or previous tile still to decide (in compare, burst), going round at the ends.
+  // N, Shift+N: the next or previous tile still to decide, going round at the ends.
   function openStep(delta: number) {
-    const burstsOnly = ui.mode === "compare";
     const n = tiles.length;
     for (let k = 1; k <= n; k += 1) {
       const i = (((tileIndex + delta * k) % n) + n) % n;
       if (i === tileIndex) break;
       const tile = tiles[i];
-      if (tile.mark.verdict !== "open" || (burstsOnly && tile.frames.length < 2)) continue;
+      if (tile.mark.verdict !== "open") continue;
       if (tileIndex >= 0 && (delta > 0 ? i < tileIndex : i > tileIndex)) {
         say(delta > 0 ? "from the top: the first one still to decide" : "from the end: the last one still to decide");
       }
       return selectTile(tile);
     }
-    say(burstsOnly ? "no other burst is left to decide" : "nothing else is left to decide");
+    say("nothing else is left to decide");
   }
 
-  // A filter keeps the selection when its tile matches, else it moves to the filter's first tile (ADR 0011).
+  // A filter keeps the selection when its tile matches, else it moves to the filter's first tile (ADR 0011). In the
+  // loupe and compare, the selected tile then shows as the walk shows it; when the filter shows nothing, the loupe
+  // says so.
   function setFilter(filter: Filter | null) {
     if (filter === ui.filter) return;
     const here = allTiles.find((t) => t.frames.some((p) => p.id === ui.currentId));
@@ -160,7 +181,11 @@
     } else if (!here || !matches(here, filter)) {
       ui.currentId = allTiles.find((t) => matches(t, filter))?.photo.id ?? ui.currentId;
     }
-    if (ui.mode === "compare") ui.mode = "loupe";
+    if (ui.mode !== "grid") {
+      const tile = tileOf(ui.currentId);
+      if (tile) showTile(tile);
+      else ui.mode = "loupe";
+    }
   }
 
   function cycleFilter(delta: number) {
@@ -179,10 +204,11 @@
     return tiles[tileIndex + 1]?.photo.id ?? null;
   }
 
-  // Where a decision moves on to: the next tile in the grid, the next photo in the loupe; compare stays.
+  // Where a decision moves on to: the next tile in the grid; in the loupe, where → goes (the next frame of a burst,
+  // else the next photo or burst, which shows as the walk shows it); compare stays on the frame.
   function nextAfter(photo: Photo): number | null {
     if (ui.mode === "grid") return nextTile();
-    if (ui.mode === "loupe") return items[items.findIndex((p) => p.id === photo.id) + 1]?.id ?? null;
+    if (ui.mode === "loupe") return walk(photo, 1);
     return null;
   }
 
@@ -203,7 +229,7 @@
     update(photo.id, { decision });
     ui.reasonFor = overrules ? photo.id : null;
     moveOn = overrules && advance;
-    if (target !== null) select(target);
+    moveTo(target);
     try {
       await api.decide(photo.id, decision);
     } catch (error) {
@@ -214,10 +240,9 @@
   }
 
   // G on a frame of a burst keeps it and rejects the burst's open frames. Frames already kept stay kept, so another G
-  // adds a keep.
+  // adds a keep. The grid then moves to the next tile and the loupe to the next frame; compare stays on the frame.
   async function pick(photo: Photo, advance = false) {
-    const target = advance ? nextTile() : null;
-    if (target !== null) select(target);
+    moveTo(advance ? nextAfter(photo) : null);
     try {
       const result = await api.pick(photo.id);
       for (const id of result.changed) update(id, { decision: id === photo.id ? "keep" : "reject" });
@@ -249,7 +274,7 @@
     dropQuestion();
     const photo = ui.photos.find((p) => p.id === id);
     if (!photo) return;
-    if (advance && ui.currentId === photo.id) select(nextAfter(photo));
+    if (advance && ui.currentId === photo.id) moveTo(nextAfter(photo));
     if (reason === null) return;
     try {
       await api.reason(photo.id, reason);
@@ -264,8 +289,16 @@
     if (ui.reasonFor !== null && ui.currentId !== ui.reasonFor) dropQuestion();
   });
 
+  // Compare decodes the photos on either side of its burst, as the loupe does its neighbours, so the walk leaves the
+  // burst as quickly as the loupe flips.
+  $effect(() => {
+    if (ui.mode !== "compare" || !currentTile) return;
+    const first = items.indexOf(currentTile.frames[0]);
+    if (first < 0) return;
+    for (const photo of [items[first - 1], items[first + currentTile.frames.length]]) if (photo) load(urls.screen(photo));
+  });
+
   function enterCompare() {
-    ui.compareFrom = ui.mode === "loupe" ? "loupe" : "grid";
     ui.zoom = false;
     ui.mode = "compare";
   }
@@ -280,8 +313,7 @@
   const act: CullActions = {
     keep: () => {
       if (!current) return;
-      if (ui.mode === "compare") pick(current);
-      else if (isBurst) pick(current, true);
+      if (isBurst) pick(current, ui.mode !== "compare");
       else decide(current, "keep");
     },
     reject: () => {
@@ -296,16 +328,12 @@
     },
     previous: () => step(-1),
     next: () => step(1),
-    up: () => (ui.mode === "grid" ? rowStep(-1) : tileStep(-1, ui.mode === "compare")),
-    down: () => (ui.mode === "grid" ? rowStep(1) : tileStep(1, ui.mode === "compare")),
+    up: () => (ui.mode === "grid" ? rowStep(-1) : tileStep(-1)),
+    down: () => (ui.mode === "grid" ? rowStep(1) : tileStep(1)),
     nextOpen: () => openStep(1),
     previousOpen: () => openStep(-1),
-    nextScene: () => {
-      if (ui.mode !== "compare") sceneStep(1);
-    },
-    previousScene: () => {
-      if (ui.mode !== "compare") sceneStep(-1);
-    },
+    nextScene: () => sceneStep(1),
+    previousScene: () => sceneStep(-1),
     nextFilter: () => cycleFilter(1),
     previousFilter: () => cycleFilter(-1),
     clearFilter: () => setFilter(null),
@@ -328,7 +356,7 @@
     },
     compare: () => {
       if (!current) return;
-      if (ui.mode === "compare") ui.mode = ui.compareFrom;
+      if (ui.mode === "compare") ui.mode = "loupe"; // the selected frame
       else if (isBurst) enterCompare();
       else say("a single photo: nothing to compare");
     },
@@ -341,8 +369,7 @@
     back: () => {
       if (ui.help) ui.help = false;
       else if (ui.zoom) ui.zoom = false;
-      else if (ui.mode === "compare") ui.mode = ui.compareFrom;
-      else if (ui.mode === "loupe" && tiles.length) ui.mode = "grid";
+      else if (ui.mode !== "grid" && tiles.length) ui.mode = "grid";
       else {
         ui.mode = "grid";
         setFilter(null);

@@ -46,21 +46,23 @@ Rejected photos are dimmed, whoever rejected them. The mark replaces the decisio
 
 | Key | Grid | Loupe | Burst compare |
 |---|---|---|---|
-| ← → | previous / next tile | previous / next photo, every frame | previous / next frame |
-| ↑ ↓ | the tile in the row above / below on screen, across scene breaks | previous / next tile | previous / next burst |
-| PgUp PgDn | previous / next scene | previous / next scene | |
-| N, Shift+N | next / previous tile to decide, going round at the ends | the same | next / previous burst to decide |
+| ← → | previous / next tile | previous / next photo; a burst opens in compare | previous / next frame, then the previous / next tile |
+| ↑ ↓ | the tile in the row above / below on screen, across scene breaks | previous / next tile | previous / next tile |
+| PgUp PgDn | previous / next scene | previous / next scene | previous / next scene |
+| N, Shift+N | next / previous tile to decide, going round at the ends | the same | the same |
 | Enter | a photo: loupe; a burst: compare | back to the grid | back to the grid |
-| C | a burst: compare | a burst's frame: compare | back to where it came from |
-| Esc | turns the filter off | back to the grid | back to where it came from |
-| Tab, Shift+Tab | next / previous filter | next / previous filter | next / previous filter, in the loupe |
+| C | a burst: compare | a burst's frame: compare | the selected frame in the loupe |
+| Esc | turns the filter off | back to the grid | back to the grid |
+| Tab, Shift+Tab | next / previous filter | next / previous filter | next / previous filter |
 | G | a photo: keep; a burst: pick the frame shown | a photo: keep; a burst's frame: pick it | pick this frame |
 | F | a photo: reject; a burst: reject every frame | reject | reject this frame |
 | U | a photo: clear; a burst: clear every frame | clear | clear this frame |
 
-`A`, `D` and `?` work as before, and `M` (the focus map) and `Z` open the photo or frame in the loupe. After `G` or `F`, the grid moves to the next tile and the loupe to the next photo (after a pick, to the next tile); burst compare stays on the burst, so the result shows. `[` and `]` stay free for Phase 2's exposure keys. The action panel has a button for every key. It looks the same for a photo, a burst tile and a frame, in every view: the same buttons and labels in the same places, without notes, and disabled where they do nothing (the owner asked for this on 2026-11-22). The guide (`?`) explains the marks, the filters and the burst tile.
+`A`, `D` and `?` work as before, and `M` (the focus map) and `Z` open the photo or frame in the loupe. The loupe and burst compare are one walk in shooting order: a single photo shows in the loupe and a burst in compare, and a move that selects another tile switches between them by itself, as does a filter change. `→` enters a burst at its first frame and `←` at its last; in compare they go frame by frame, and past the burst's ends on to the next or previous tile. The moves by tile (`↑` `↓`, `N`, `PgUp` `PgDn`) select the tile's cover, as in the grid. A burst's frames shown in the loupe with `C`, `M` or `Z` stay in the loupe frame by frame until the walk enters another burst. After `G` or `F`, the grid moves to the next tile and the loupe on as `→` does, to the next frame of a burst or the next tile; burst compare stays on the frame, so the result shows, and `→` walks on through the frames while `↓` skips to the next tile. `[` and `]` stay free for Phase 2's exposure keys. The action panel has a button for every key. It looks the same for a photo, a burst tile and a frame, in every view: the same buttons and labels in the same places, without notes, and disabled where they do nothing (the owner asked for this on 2026-11-22). The guide (`?`) explains the marks, the filters and the burst tile.
 
 The owner moved keep and pick from `P` to `G` and reject from `X` to `F` on 2026-11-22, and the focus map from `F` to `M` to make room; `P`, `Shift+P` and `X` do nothing now.
+
+The owner made the loupe and burst compare one walk on 2026-11-27, after walking into bursts in the loupe without noticing them while culling a real shoot: `←` `→` went through a burst's frames as if they were single photos, and `G` on a frame picked it and jumped past the burst, so its other frames were rejected unseen. Until then, `↑` `↓` and `N` in compare moved between bursts only and `PgUp` `PgDn` did nothing there, `Esc` and `C` went back to wherever compare was opened from, and a filter change always fell back from compare to the loupe. The owner chose to keep `G` in compare on the frame rather than move on.
 
 ### Server
 
@@ -72,7 +74,7 @@ The owner moved keep and pick from `P` to `G` and reject from `X` to `F` on 2026
 
 ## Consequences for the plan
 
-- §2 and §6: the cull view is one grid of every photo with the piles as filters, instead of three pile tabs with Your call first; bursts are whole tiles instead of stacks per pile; the keyboard draft gains `N`, `PgUp` and `PgDn`, and `Tab` for the filters, and since 2026-11-22 has `G`, `F` and `M` for keep, reject and the focus map.
+- §2 and §6: the cull view is one grid of every photo with the piles as filters, instead of three pile tabs with Your call first; bursts are whole tiles instead of stacks per pile; the keyboard draft gains `N`, `PgUp` and `PgDn`, and `Tab` for the filters, and since 2026-11-22 has `G`, `F` and `M` for keep, reject and the focus map; since 2026-11-27 its `←` `→` and `↑` `↓` rows walk the loupe and burst compare as one.
 - §4.4: the app's own rejects stay the app's when the owner picks a frame. From 2026-11-20 to 2026-11-22 picking another frame also moved the owner's keep, replacing ADR 0009's pick rule; since then a pick leaves the owner's earlier keeps alone again, as ADR 0009's did.
 - §10: Phase 1's pile tabs became this view.
 - §12: decision 18 stands, since the piles and the trust dial still decide what the app does on its own; they are now shown as marks and filters instead of tabs. Decision 24 records this view.
