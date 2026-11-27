@@ -3,8 +3,12 @@
 A network reads where "up" points all over the picture, from people, trees and horizons as well as lines, and a
 geometric optimization turns that into the camera's roll and pitch, each with an uncertainty. The focal length from
 the photo's metadata goes in as a prior. The weights are GeoCalib's pinhole release: RawTherapee has already corrected
-the lens distortion of the renders it reads. It runs on the CPU in about 1.5 s per photo, one photo at a time,
-since it uses every core.
+the lens distortion of the renders it reads.
+
+It runs one photo at a time: on the GPU when PyTorch sees one with GPU_FREE_MIB free (about 0.4 s per photo on a
+GTX 1650, using about 500 MiB), otherwise on the CPU (about 2 s, using every core). A GPU that runs out of memory
+sends it back to the CPU. `release()` frees the model and its GPU memory when an edit is done, so the GPU holds one
+model at a time.
 """
 
 from __future__ import annotations
@@ -24,9 +28,11 @@ from . import colorspace as cs
 MODELS = REPO_ROOT / "models"
 WEIGHTS = Path("geocalib/geocalib-pinhole.tar")
 SENSOR_LONG_MM = 23.5  # the D7100's sensor is 23.5 x 15.6 mm
+GPU_FREE_MIB = 1024  # GeoCalib needs about 500 MiB on the GPU; with less free than this, it runs on the CPU
 
 _lock = threading.Lock()
 _model: Any = None
+_device = "cpu"
 
 
 class GeoCalibMissing(RuntimeError):
@@ -39,13 +45,15 @@ class Gravity:
     uncertainty: float  # degrees, one standard deviation of the roll
     pitch: float  # degrees, positive when the camera points up
     focal_prior: float | None  # pixels, from the metadata
+    device: str = "cpu"  # where GeoCalib ran
 
-    def to_json(self) -> dict[str, float | None]:
+    def to_json(self) -> dict[str, float | str | None]:
         return {
             "turn": round(self.turn, 3),
             "uncertainty": round(self.uncertainty, 3),
             "pitch": round(self.pitch, 2),
             "focal_prior": None if self.focal_prior is None else round(self.focal_prior, 1),
+            "device": self.device,
         }
 
 
@@ -53,8 +61,21 @@ def available() -> bool:
     return (MODELS / WEIGHTS).is_file()
 
 
+def device() -> str:
+    """The device GeoCalib loads on: "cuda" when PyTorch sees a GPU with GPU_FREE_MIB free, else "cpu"."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return "cpu"
+    try:
+        free, _total = torch.cuda.mem_get_info()
+    except RuntimeError:
+        return "cpu"
+    return "cuda" if free >= GPU_FREE_MIB * 2**20 else "cpu"
+
+
 def _load() -> Any:
-    global _model
+    global _model, _device
     if _model is None:
         path = MODELS / WEIGHTS
         if not path.is_file():
@@ -63,8 +84,23 @@ def _load() -> Any:
             warnings.simplefilter("ignore", FutureWarning)  # its TorchScript helpers
             from ..vendor.geocalib import GeoCalib
 
-            _model = GeoCalib(weights=str(path))
+            _device = device()
+            _model = GeoCalib(weights=str(path)).to(_device)
     return _model
+
+
+def release() -> None:
+    """Free the model, and the GPU memory it holds; the next estimate loads it again."""
+    global _model, _device
+    with _lock:
+        if _model is None:
+            return
+        _model = None
+        if _device == "cuda":
+            import torch
+
+            torch.cuda.empty_cache()
+        _device = "cpu"
 
 
 def focal_pixels(focal_mm: float | None, long_edge: int) -> float | None:
@@ -76,6 +112,7 @@ def focal_pixels(focal_mm: float | None, long_edge: int) -> float | None:
 
 def estimate(render: np.ndarray, focal_mm: float | None = None) -> Gravity:
     """The roll and pitch of an upright, lens-corrected render (linear sRGB, (h, w, 3))."""
+    global _device
     import torch
 
     h, w = render.shape[:2]
@@ -87,7 +124,16 @@ def estimate(render: np.ndarray, focal_mm: float | None = None) -> Gravity:
         model = _load()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            result = model.calibrate(image, priors=priors)
+            try:
+                result = model.calibrate(
+                    image.to(_device), priors={k: v.to(_device) for k, v in priors.items()} if priors else None
+                )
+            except torch.cuda.OutOfMemoryError:
+                model.to("cpu")  # the GPU filled up: go on, and stay, on the CPU
+                torch.cuda.empty_cache()
+                _device = "cpu"
+                result = model.calibrate(image, priors=priors)
+        ran_on = _device
     gravity = result["gravity"]
     # GeoCalib's roll is the camera's; the picture levels when it turns the other way (ADR 0017).
     return Gravity(
@@ -95,4 +141,5 @@ def estimate(render: np.ndarray, focal_mm: float | None = None) -> Gravity:
         uncertainty=math.degrees(float(result["roll_uncertainty"].item())),
         pitch=math.degrees(float(gravity.pitch.item())),
         focal_prior=focal,
+        device=ran_on,
     )

@@ -59,8 +59,8 @@ Straightening:
   - The lines are measured as in geometry@2.
   - Where they give no confident roll, GeoCalib's roll (with the focal length as a prior) is applied when its uncertainty is at most 1° (`GEOCALIB_SURE`), with a confidence of 0.9: applied automatically, as the owner asked. A portrait's (a face over 6 % of the frame) is 0.54: applied halfway and reviewed, since a portrait's tilt is often deliberate (plan §4.5). A face the turn would cut still reduces it.
   - A cautious roll from horizontals alone that GeoCalib confirms within 0.5° becomes confident.
-  - GeoCalib runs only when the lines are not already confident, one photo at a time, since it uses every core.
-- **Runtime:** PyTorch's CPU build (download.pytorch.org/whl/cpu, about 210 MB) and kornia become dependencies. C5's network and GeoCalib's inference code are vendored in `src/rie/vendor/` with their licenses, because neither is on PyPI and GeoCalib's package pins `opencv-python` (ADR 0004); its README lists the commits and every change. The weights are in `models/manifest.toml`. C5 runs on PyTorch rather than ONNX Runtime (plan D5): PyTorch is there for GeoCalib anyway, and ONNX Runtime is not a dependency of the app.
+  - GeoCalib runs only when the lines are not already confident, one photo at a time: on the GPU when it has 1 GiB free (`GPU_FREE_MIB`), otherwise on the CPU, where it uses every core. A GPU that runs out of memory sends it back to the CPU, and `rie edit` and `rie eval` free its GPU memory when they are done with it, so the GPU holds one model at a time.
+- **Runtime:** PyTorch's CUDA 13.2 build (download.pytorch.org/whl/cu132, 539 MB, with about 2.5 GB of NVIDIA libraries from PyPI) and kornia become dependencies; without a usable GPU, the same build runs on the CPU. C5's network and GeoCalib's inference code are vendored in `src/rie/vendor/` with their licenses, because neither is on PyPI and GeoCalib's package pins `opencv-python` (ADR 0004); its README lists the commits and every change. The weights are in `models/manifest.toml`. C5 runs on PyTorch rather than ONNX Runtime (plan D5): PyTorch is there for GeoCalib anyway, and ONNX Runtime is not a dependency of the app.
 - **Tests** run the classic paths unless marked `learned`; the `learned` tests run both real models and skip without the weights.
 
 ## As shipped
@@ -87,10 +87,16 @@ Straightening, 309 photos the owner turned and 297 the owner left level:
 
 GeoCalib acted on 64 of those turned photos (median error 0.24°) and 40 of those level ones; the lines on 22 and 6. Doing nothing leaves the turned photos a median 1.49° off. On the test half, geometry@3 acts on 41 % of the turned photos, which end a median 0.60° off (geometry@2: 1.50°), and turns 23 % of the level ones.
 
+## GeoCalib on the GPU
+
+On the GTX 1650 (4 GB, with the desktop holding about 2 GB), the owner approved the CUDA build. GeoCalib on the 606 renders of `rie eval` takes 0.39–0.41 s per photo on the GPU against 2.1–2.4 s on the CPU at the same time, and holds at most 491 MiB of GPU memory. On the 132 photos where it is sure (uncertainty at most 1°), the GPU's turns differ from the CPU's by a median 0.013° and at most 0.074°; the 1° cut-off decides differently on at most one of the 606.
+
+Through the app, the first photo also loads the model (about 5 s). `rie eval --agent geometry` with GeoCalib on the GPU took 9.9 minutes for the 606 photos, four at a time. It acts on the same photos as the CPU run but one, and its turns differ from that run's by at most 0.22°; the scores are unchanged (median error where it acts 0.25°, 15 % of the level photos turned).
+
 ## Consequences for the plan
 
 - §4.6: the learned estimator of "v2" is C5, which needs no training for the D7100. Gray-card shots and the golden set become test data, not training data. Decision 21 holds: the old picks trained nothing, and two thresholds were set on half the folders, as in ADR 0016.
 - §4.5: GeoCalib (item 3) is in, and applied automatically when it is sure. The horizon detector (item 2) is not needed for now. Old sidecars cannot measure "≤ 2 % of deliberate tilts corrected", since photos left as shot were not always level.
-- D5: PyTorch runs two models, on the CPU.
-- `rie edit` takes about 1.5 s more per photo on which the lines are not confident.
+- D5: PyTorch runs two models: C5 on the CPU, GeoCalib on the GPU when there is room.
+- `rie edit` takes about 0.4 s more per photo on which the lines are not confident (2 s without the GPU).
 - ADR 0016's test half has now been looked at twice; further tuning needs new folders or the golden set.

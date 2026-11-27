@@ -384,6 +384,18 @@ def test_geocalib_confirms_a_cautious_roll_from_level_lines(monkeypatch):
     assert geometry.propose(ctx).band != "apply"  # disagreeing: still cautious
 
 
+def test_geocalib_takes_the_gpu_only_with_room_to_spare(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert gravity.device() == "cpu"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda: (300 * 2**20, 4096 * 2**20))
+    assert gravity.device() == "cpu"  # a busy GPU: the CPU
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda: (1600 * 2**20, 4096 * 2**20))
+    assert gravity.device() == "cuda"
+
+
 @pytest.mark.learned
 @pytest.mark.skipif(not (c5.MODELS / c5.WEIGHTS).is_file(), reason="the C5 weights are not in models/")
 def test_c5_estimates_the_light_of_a_synthetic_scene():
@@ -399,6 +411,9 @@ def test_geocalib_turns_the_same_way_as_the_lines():
     reading = gravity.estimate(_turned_lines(horizontal=True, vertical=True), 35.0)
     assert reading.turn == pytest.approx(2.0, abs=1.0)  # turned 2 degrees clockwise: turn back counter-clockwise
     assert reading.uncertainty < 2.0 and reading.focal_prior == pytest.approx(35.0 / 23.5 * 1200)
+    assert reading.device in ("cpu", "cuda")
+    gravity.release()
+    assert gravity._model is None
 
 
 # --- harmonization -----------------------------------------------------------------------------------------------

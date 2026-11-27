@@ -25,7 +25,8 @@ dependencies = [
   "uvicorn>=0.38",
   "colour-science>=0.4.6,<0.5",
   # Learned estimators (ADR 0017): C5's network for white balance and GeoCalib for straightening, both vendored in
-  # src/rie/vendor. PyTorch is the CPU build ([tool.uv.sources]); kornia resizes images for GeoCalib.
+  # src/rie/vendor. PyTorch is the CUDA 13.2 build on Linux ([tool.uv.sources]): GeoCalib uses the GPU when it has
+  # room and the CPU otherwise; kornia resizes images for GeoCalib.
   "torch==2.15.*",
   "kornia>=0.9,<0.10",
 ]
@@ -59,12 +60,12 @@ spikes = [
 rie = "rie.cli:main"
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
+torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'linux'" }]
 
-# The CPU build of PyTorch (about 210 MB instead of several GB with CUDA); every model also runs on the CPU (D5).
+# PyTorch's CUDA 13.2 build (539 MB; its NVIDIA libraries, about 2.5 GB, come from PyPI). It runs on the CPU too (D5).
 [[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [tool.hatch.build.targets.wheel]

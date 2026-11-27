@@ -32,7 +32,7 @@ import cv2
 import numpy as np
 
 from . import locations
-from .agents import baseline, c5, color, exposure, geometry, harmonize, qa, wb
+from .agents import baseline, c5, color, exposure, geometry, gravity, harmonize, qa, wb
 from .agents import colorspace as cs
 from .agents.context import ImageContext, load_contexts
 from .agents.linear import read_linear
@@ -346,9 +346,12 @@ def edit_folder(
         references = c5.references(paths, workers=settings.workers)
         for photo in run.photos:
             photo.ctx.references = references
-    with ThreadPoolExecutor(max_workers=max(1, settings.workers)) as pool:
-        for done, _ in enumerate(pool.map(lambda p: _measure(p, cfg, settings), run.photos), start=1):
-            report("measure", done)
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, settings.workers)) as pool:
+            for done, _ in enumerate(pool.map(lambda p: _measure(p, cfg, settings), run.photos), start=1):
+                report("measure", done)
+    finally:
+        gravity.release()  # GeoCalib's GPU memory goes back before rendering
     frames = [
         harmonize.Frame(
             p.ctx.name,

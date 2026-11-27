@@ -39,7 +39,7 @@ import cv2
 import numpy as np
 
 from . import catalog, locations
-from .agents import c5, geometry, harmonize, wb
+from .agents import c5, geometry, gravity, harmonize, wb
 from .agents import colorspace as cs
 from .agents.context import Face, ImageContext
 from .agents.linear import read_linear
@@ -389,7 +389,10 @@ def eval_geometry(
             "error": round(abs(applied - ref.turn), 2),
         }
 
-    done, result.errors = _run_all(items, one, "straightening", workers, progress)
+    try:
+        done, result.errors = _run_all(items, one, "straightening", workers, progress)
+    finally:
+        gravity.release()
     result.rows = [row for _, row in done]
     turned = [r for r in result.rows if abs(r["owner"]) > TURNED]
     level = [r for r in result.rows if abs(r["owner"]) <= TURNED]

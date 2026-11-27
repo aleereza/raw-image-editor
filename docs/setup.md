@@ -14,13 +14,13 @@ What the tool needs, how to install it, which models it uses, and where test sam
 | uv | Creates the Python 3.13 environment from `uv.lock` | 0.13.5 |
 | Claude Code | Culling and editing passes (Phase 3), signed in with `claude auth login` | 2.1.327 |
 | Node.js and npm | Building the web UI once (`web/`); not needed to run it | Node 26, npm 11 |
-| NVIDIA GPU and driver (optional) | ONNX Runtime in the spikes; the app's PyTorch is the CPU build, and everything runs on the CPU | GTX 1650, 4 GB |
+| NVIDIA GPU and driver (optional) | GeoCalib (PyTorch, CUDA 13.2) when 1 GiB is free, and ONNX Runtime in the spikes; everything also runs on the CPU | GTX 1650, 4 GB, driver 615 |
 
 `uv run rie check` reports each of these and the photo drive's state.
 
 ## Python environment
 
-`uv sync` creates `.venv` with Python 3.13 (ADR 0004) and the locked packages: NumPy, pyvips, rawpy, OpenCV (headless), MediaPipe 0.10.35, scikit-learn, FastAPI, Uvicorn, colour-science, and PyTorch 2.15 with kornia for C5 and GeoCalib. PyTorch comes from its CPU-only index (`[tool.uv.sources]` in `pyproject.toml`; about 210 MB instead of several GB with CUDA). C5's network and GeoCalib's inference code are vendored in `src/rie/vendor/` with their licenses (ADR 0017). The dependency groups are:
+`uv sync` creates `.venv` with Python 3.13 (ADR 0004) and the locked packages: NumPy, pyvips, rawpy, OpenCV (headless), MediaPipe 0.10.35, scikit-learn, FastAPI, Uvicorn, colour-science, and PyTorch 2.15 with kornia for C5 and GeoCalib. PyTorch is the CUDA 13.2 build from PyTorch's own index (`[tool.uv.sources]` in `pyproject.toml`; 539 MB, plus about 2.5 GB of NVIDIA libraries from PyPI); without a usable GPU it runs on the CPU. C5's network and GeoCalib's inference code are vendored in `src/rie/vendor/` with their licenses (ADR 0017). The dependency groups are:
 
 - `dev`: pytest, ruff, pyright, Pillow and httpx for the tests;
 - `spikes` (`uv sync --group spikes`): rawpy 0.28, numpy, OpenCV 5.1 (headless), onnxruntime-gpu 1.32 with its CUDA 13 and cuDNN 9 wheels (about 3 GB), MediaPipe 0.10.35, pyvips 3.2, Pillow and the MCP SDK 2.3.
