@@ -33,6 +33,7 @@ This repository holds the code and documentation of an AI-assisted RAW photo wor
 
 - Weights live in `models/` (ignored by Git). `models/manifest.toml` records each file's source, SHA-256 and license, and `uv run python scripts/fetch_models.py` downloads and checks them.
 - MediaPipe stays at 0.10.35 (ADR 0003). Everything must also run on the CPU, and the GPU has little free memory, so load one model at a time.
+- PyTorch is the CUDA 13.2 build from its own index (`[tool.uv.sources]`); GeoCalib takes the GPU only with 1 GiB free and frees it after each run (`rie.agents.gravity`). C5's network and GeoCalib's inference code are vendored in `src/rie/vendor/` (ADR 0017): change them only with a `# rie:` mark and a line in its README.
 
 ## Commands
 

@@ -143,7 +143,10 @@
           <td>{folder.analyzed_at ? "yes" : "…"}</td>
           <td>{folder.culled_at ? folder.culled_at.slice(0, 10) : ""}</td>
           <td>{folder.in_trash || ""}</td>
-          <td>{#if folder.in_trash}<button onclick={() => restore(folder)}>Restore rejects</button>{/if}</td>
+          <td>
+            {#if folder.in_trash}<button onclick={() => restore(folder)}>Restore rejects</button>{/if}
+            <a class="review" href={`/review.html#folder=${folder.id}`} title="Review the edits of this folder's kept photos">Review edits</a>
+          </td>
         </tr>
       {:else}
         <tr><td colspan="6" class="muted">None yet: open one above.</td></tr>

@@ -82,6 +82,12 @@ class Claude:
 
 
 @dataclass(frozen=True)
+class Export:
+    artist: str = ""  # written into every exported JPEG's EXIF (plan §6 Export); empty: left out
+    copyright: str = ""
+
+
+@dataclass(frozen=True)
 class Config:
     paths: Paths = field(default_factory=Paths)
     drive: Drive = field(default_factory=Drive)
@@ -92,6 +98,7 @@ class Config:
     safety: Safety = field(default_factory=Safety)
     server: Server = field(default_factory=Server)
     claude: Claude = field(default_factory=Claude)
+    export: Export = field(default_factory=Export)
 
     @property
     def rawtherapee_settings_dir(self) -> Path:
@@ -139,6 +146,7 @@ def parse(data: dict[str, Any], base: Path = REPO_ROOT) -> Config:
         "safety",
         "server",
         "claude",
+        "export",
     }
     if unknown:
         raise ConfigError(f"unknown table(s): {', '.join(sorted(unknown))}")
@@ -218,6 +226,11 @@ def parse(data: dict[str, Any], base: Path = REPO_ROOT) -> Config:
         enabled=_typed(c, "enabled", bool, Claude.enabled, "claude"),
         model=_typed(c, "model", str, Claude.model, "claude"),
     )
+    ex = _table(data, "export", {"artist", "copyright"})
+    export = Export(
+        artist=_typed(ex, "artist", str, Export.artist, "export"),
+        copyright=_typed(ex, "copyright", str, Export.copyright, "export"),
+    )
     return Config(
         paths=paths,
         drive=drive,
@@ -228,6 +241,7 @@ def parse(data: dict[str, Any], base: Path = REPO_ROOT) -> Config:
         safety=safety,
         server=server,
         claude=claude,
+        export=export,
     )
 
 

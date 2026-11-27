@@ -30,6 +30,7 @@ from ..cull import actions, piles
 from ..cull import model as model_mod
 from ..scan import previews
 from .jobs import JobRunner
+from .review_api import add_review_routes
 
 WEB_DIST = REPO_ROOT / "web" / "dist"
 IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
@@ -604,6 +605,8 @@ def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
                 await asyncio.sleep(0.3)
 
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+    add_review_routes(app, cfg, db, runner)  # Phase 2: review, export and the look lab (/review.html)
 
     if (WEB_DIST / "index.html").is_file():
         app.mount("/", WebFiles(directory=WEB_DIST, html=True), name="web")

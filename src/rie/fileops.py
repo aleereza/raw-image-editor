@@ -8,7 +8,8 @@ What it can do, and nothing else:
   specification asks, so file managers can restore it too.
 - **Restore** a trashed file to where it was, never over an existing file. After the file is back, its `.trashinfo`
   is removed, as the specification asks; that metadata file is the one thing this module ever removes.
-- **Create a new file** (a sidecar) under a temporary name, then rename it into place without replacing anything.
+- **Create a new file** (a sidecar or an export) under a temporary name, then rename it into place without
+  replacing anything, and **create a new folder** for exports (`jpg/`), never over anything that exists.
 - **Update a RawTherapee sidecar** in place through a temporary name: only `.pp3` files, only when the content on
   disk is still what the caller read, and only when the app created the sidecar or has backed it up first.
 - **Back up a sidecar** to the internal disk before the app first adds to it (reading the photo folder only).
@@ -321,6 +322,18 @@ def create_file(path: Path, data: bytes) -> str:
         _discard_temp(tmp)
         raise
     return sha256_bytes(data)
+
+
+def make_folder(path: Path) -> Path:
+    """Create a new folder (the exports' `jpg/`); an existing folder is fine, a file of that name is refused."""
+    path = Path(os.path.abspath(path))
+    if path.is_dir() and not path.is_symlink():
+        return path
+    if os.path.lexists(path):
+        raise FileOpsError(f"{path} exists and is not a folder; refusing to replace it")
+    _audit("mkdir", path)
+    os.mkdir(path, 0o755)
+    return path
 
 
 def backup_sidecar(path: Path, backup_dir: Path) -> Path:

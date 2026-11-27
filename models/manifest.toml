@@ -14,3 +14,17 @@ source = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_l
 sha256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 license = "Apache-2.0"
 use = "eyes, smile and head pose per face (ADR 0003)"
+
+[c5]
+file = "c5/C5_m_7_h_64_w_G.pth"
+source = "https://raw.githubusercontent.com/mahmoudnafifi/C5/dca92361d43c8e737697fb27ac6eb9aa5d640bc4/models/C5_m_7_h_64_w_G.pth"
+sha256 = "33455c470f51650d3b8762eeb57f335789b15dd55909ae3ff72f93d65b1539c3"
+license = "Apache-2.0"
+use = "white balance: C5 with the gain multiplier, seven histograms of 64 bins (ADR 0017)"
+
+[geocalib]
+file = "geocalib/geocalib-pinhole.tar"
+source = "https://github.com/cvg/GeoCalib/releases/download/v1.0/geocalib-pinhole.tar"
+sha256 = "86d6aeacd8bbd974c59ce39f61854e00d36911c732ad89be471476fd708722ac"
+license = "CC-BY-4.0"
+use = "straightening: the camera's roll and its uncertainty (ADR 0017)"

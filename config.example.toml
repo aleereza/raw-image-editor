@@ -54,3 +54,8 @@ uuid = "0123456789ABCDEF"
 # Claude's culling and editing passes (Phase 3), through Claude Code on the signed-in account.
 # enabled = true
 # model = ""              # empty: whatever model Claude Code is set to
+
+[export]
+# Full-size JPEGs written into each shoot folder's jpg/ (plan §6.1). These go into every JPEG's EXIF; empty: left out.
+# artist = ""
+# copyright = ""
