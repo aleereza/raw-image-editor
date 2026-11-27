@@ -1,6 +1,6 @@
 # ADR 0008: Analysis v1 — sharpness, faces, focus verdicts, grouping and burst ranking
 
-- **Status:** accepted; every threshold is provisional until the golden set exists; the face step checks that the landmarker read the face in each box since ADR 0012 (`faces@2`)
+- **Status:** accepted; every threshold is provisional until the golden set exists; the face step checks that the landmarker read the face in each box since ADR 0012 (`faces@2`); faces are followed through a burst by distance, and small faces in the background are not people, since ADR 0014 (`burst@2`)
 - **Date:** 2026-11-18 (Phase 1)
 - **Code:** `src/rie/analysis/` (`raw.py`, `sharpness.py`, `faces.py`, `focus.py`, `grouping.py`, `burst.py`, `run.py`, `folder.py`), `tests/test_analysis.py`
 

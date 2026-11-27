@@ -101,7 +101,7 @@ export interface Analysis {
     af_box?: [number, number, number, number] | null;
     reason?: string;
   };
-  burst: Record<string, unknown>;
+  burst: Record<string, unknown> & { person_tracks?: number[] };
   look: Record<string, unknown>;
   recipe: { params: Record<string, Record<string, unknown>> } | null;
   unmodeled: string[];
@@ -167,8 +167,7 @@ export const api = {
   decide: (id: number, decision: Decision, reason?: string) =>
     request<{ ok: boolean }>("POST", `/api/photos/${id}/decision`, { decision, reason: reason ?? null }),
   reason: (id: number, reason: string) => request<{ ok: boolean }>("POST", `/api/photos/${id}/reason`, { reason }),
-  pick: (id: number, keepOthers: boolean) =>
-    request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/pick`, { keep_others: keepOthers }),
+  pick: (id: number) => request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/pick`),
   decideBurst: (id: number, decision: "reject" | null) =>
     request<{ ok: boolean; changed: number[] }>("POST", `/api/photos/${id}/burst-decision`, { decision }),
   donePreview: (id: number) =>

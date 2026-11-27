@@ -178,6 +178,7 @@ def run_grouping(conn: sqlite3.Connection, folder_id: int) -> GroupStats:
                         "issues": r.issues,
                         "reason": r.reason,
                         "duplicate_of": duplicates_of.get(r.image_id, []),
+                        "person_tracks": r.person_tracks,
                     }
                     conn.execute(
                         "INSERT INTO analyses (image_id, kind, version, input_hash, result, seconds, created_at) "

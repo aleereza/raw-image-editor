@@ -16,7 +16,6 @@ export const REASONS = ["blur", "eyes", "expression", "duplicate", "composition"
 // Everything the culling page can do; the keys and the action panel both call these.
 export interface CullActions {
   keep: () => void; // a single photo: keep it; a frame of a burst (or a burst tile's frame shown): pick it
-  keepToo: () => void; // a frame of a burst: keep it as well, leaving the other frames as they are
   reject: () => void; // a burst tile in the grid: reject every frame
   clear: () => void; // a burst tile in the grid: clear every frame
   previous: () => void;

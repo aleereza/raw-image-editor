@@ -16,12 +16,11 @@
     ["Esc", "show every photo (turns the filter off)", "back to the grid", "back to where you came from"],
     ["Mouse back", "like Esc; with every photo shown, back to the folders", "like Esc", "like Esc"],
     ["Tab  Shift+Tab", "next / previous filter", "next / previous filter", "next / previous filter, in the loupe"],
-    ["P", "a photo: keep; a burst: pick the frame shown", "a photo: keep; a burst's frame: pick it", "pick this frame"],
-    ["Shift+P", "a burst: keep the frame shown too", "a burst's frame: keep it too", "keep this one too"],
-    ["X", "a photo: reject; a burst: reject every frame", "reject", "reject this frame"],
+    ["G", "a photo: keep; a burst: pick the frame shown", "a photo: keep; a burst's frame: pick it", "pick this frame"],
+    ["F", "a photo: reject; a burst: reject every frame", "reject", "reject this frame"],
     ["U", "a photo: clear; a burst: clear every frame", "clear your decision", "clear this frame"],
     ["A", "accept the app's pick for the burst", "the same", "the same"],
-    ["F", "focus map, in the loupe", "focus map, faces and AF point", "focus map, in the loupe"],
+    ["M", "focus map, in the loupe", "focus map, faces and AF point", "focus map, in the loupe"],
     ["Z", "100% on the eyes or AF point, in the loupe", "100% on the eyes or AF point; drag or scroll to move", "100%, in the loupe"],
     ["D", "flip and zoom timings", "the same", "the same"],
     ["?", "this guide", "the same", "the same"],
@@ -85,16 +84,16 @@
       <p class="muted">No focus sign means there wasn't enough detail to measure. Hover over a photo to read the app's reason.</p>
 
       <h3>Bursts</h3>
-      <p>A burst's tile shows its kept frame (the app's best of them when several are kept), else the app's best frame, and while you look through it, the frame you selected. Its mark is ✓ once a frame is kept and none is open, ✗ when every frame is rejected, and open otherwise, for example with one frame rejected and two open. In the grid, <kbd>P</kbd> picks the frame shown, <kbd>X</kbd> rejects every frame and <kbd>U</kbd> clears every frame. A click selects the burst, as it does a single photo; a double-click, <kbd>Enter</kbd> or <kbd>C</kbd> opens burst compare.</p>
+      <p>A burst's tile shows its kept frame (the app's best of them when several are kept), else the app's best frame, and while you look through it, the frame you selected. Its mark is ✓ once a frame is kept and none is open, ✗ when every frame is rejected, and open otherwise, for example with one frame rejected and two open. In the grid, <kbd>G</kbd> picks the frame shown, <kbd>F</kbd> rejects every frame and <kbd>U</kbd> clears every frame. A click selects the burst, as it does a single photo; a double-click, <kbd>Enter</kbd> or <kbd>C</kbd> opens burst compare.</p>
 
       <h3>Burst compare <kbd>C</kbd></h3>
-      <p>Every frame of the burst side by side, each with its mark and its problems ("eyes closed, 85% as sharp as the sharpest frame"). Below them, one strip per person, followed by where they are in the frame, never by who they are: eyes open or closed, the smile, and the blur at the eyes (lower is sharper).</p>
-      <p><kbd>P</kbd> picks a frame: it is kept, and every other frame becomes your reject, including a frame you kept before, so <kbd>P</kbd> on another frame moves the keep. Frames the app already rejects on its own keep the app's mark; Done culling rejects them anyway. <kbd>Shift</kbd>+<kbd>P</kbd> keeps a frame and leaves the others as they are. Compare stays on the burst so you see the result; <kbd>↓</kbd> or <kbd>N</kbd> moves on.</p>
+      <p>Every frame of the burst side by side, each with its mark and its problems ("eyes closed, 85% as sharp as the sharpest frame"). Below them, one strip per person seen in at least two frames, followed by where they are in the frame, never by who they are: eyes open or closed, the smile, and the blur at the eyes (lower is sharper). Faces seen in only one frame, or small in the background, fold away under Other faces.</p>
+      <p><kbd>G</kbd> picks a frame: it is kept, and the burst's open frames become your rejects. Frames you kept stay kept, so <kbd>G</kbd> on another frame keeps it too; to move the keep instead, press <kbd>F</kbd> on the frame you kept before. Frames the app already rejects on its own keep the app's mark; Done culling rejects them anyway. Compare stays on the burst so you see the result; <kbd>↓</kbd> or <kbd>N</kbd> moves on.</p>
 
       <h3>The bottom bar</h3>
       <p>The file (<span class="muted">+ JPG</span> when the camera's JPEG is paired with it), its mark in words ("kept by you", "rejected by the app", "to decide"), then the app's suggestion, such as <b class="reject">reject</b> <span class="muted">(technical, 92% reject)</span>, and its reason. The kind says why: <b>technical</b> (focus or exposure), <b>duplicates</b> (almost the same as a better frame), <b>eyes</b>, <b>expression</b> (not the burst's best moment, or "best of 7") or <b>composition</b> (a face cut by the edge). The percentage is how likely you are to reject it. On the right: the frame's place in its burst and the app's rank for it ("burst #3/7, rank 2"), the exposure, and <span class="badge">RT edits</span> when RawTherapee already has edits for the photo; they are kept. For a frame of a burst, a second line gives every frame's mark: "#2 kept by you; #1 rejected by the app; #3, #4 rejected by you".</p>
 
-      <h3>Focus map <kbd>F</kbd></h3>
+      <h3>Focus map <kbd>M</kbd></h3>
       <p>
         <span class="swatch" style:background={blurColour(0.3, 0.9)}></span> sharp
         <span class="swatch" style:background={blurColour(1, 0.9)}></span> a little soft
@@ -116,7 +115,7 @@
           {/each}
         </tbody>
       </table>
-      <p class="muted">A tile is a single photo, or a whole burst. After <kbd>P</kbd> or <kbd>X</kbd> the grid moves to the next tile and the loupe to the next photo, once you answer or skip the question when there is one; after a pick, the loupe moves to the next tile. Burst compare stays where it is.</p>
+      <p class="muted">A tile is a single photo, or a whole burst. After <kbd>G</kbd> or <kbd>F</kbd> the grid moves to the next tile and the loupe to the next photo, once you answer or skip the question when there is one; after a pick, the loupe moves to the next tile. Burst compare stays where it is.</p>
       <p class="muted">Mouse: a click selects a photo or a burst, and a double-click opens it: a photo in the loupe, a burst in burst compare. In compare, a double-click picks a frame. The mouse's back button (or the browser's Back, or <kbd>Alt</kbd>+<kbd>←</kbd>) does what <kbd>Esc</kbd> does, one step at a time, and from the grid showing every photo it goes back to the folders.</p>
       <p class="muted">When you overrule the app on one photo, the bar at the bottom asks why: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition, or Skip. It is optional. The photo stays on screen until you answer, and then the view moves on; any other key skips the question and does its own job.</p>
       <p class="muted">Rejects are only flags until you press Done culling; then they go to the drive's trash, which only you empty.</p>
