@@ -3,13 +3,14 @@ synthetic data (no raw file, no RawTherapee)."""
 
 from __future__ import annotations
 
+import itertools
 import math
 
 import cv2
 import numpy as np
 import pytest
 
-from rie.agents import baseline, color, exposure, geometry, harmonize, qa, wb
+from rie.agents import baseline, c5, color, exposure, geometry, gravity, harmonize, qa, wb
 from rie.agents import colorspace as cs
 from rie.agents.context import Face, ImageContext
 from rie.agents.linear import LinearRaw
@@ -287,6 +288,117 @@ def test_vertical_lines_alone_are_measured_but_not_acted_on():
     p = geometry.propose(ctx)
     assert p.evidence["lines"] == "horizontals" and not p.abstain
     assert p.params["geometry"]["rotate_deg"] == pytest.approx(2.0, abs=0.15)
+
+
+# --- learned estimators: C5 and GeoCalib (ADR 0017) ---------------------------------------------------------------
+
+
+def _c5_reference_histogram(rgb: np.ndarray) -> np.ndarray:
+    """C5's own code (src/ops.py: get_hist_colors and compute_histogram), literal and slow."""
+    pixels = rgb.reshape(-1, 3).astype(np.float64)
+    logs = np.log(pixels + 1e-9)
+    chroma = np.stack([logs[:, 1] - logs[:, 0], logs[:, 1] - logs[:, 2]], axis=1)
+    keep = pixels.sum(axis=1) > 1e-9
+    chroma, colors = chroma[keep], pixels[keep]
+    step = 5.7 / 63
+    a_u = np.arange(-2.85, 2.85 + step / 2, step)
+    a_v = np.flip(a_u)
+    du = np.abs(chroma[:, :1] - a_u[None, :])
+    dv = np.abs(chroma[:, 1:] - a_v[None, :])
+    du[du > step] = 0
+    du[du != 0] = 1
+    dv[dv > step] = 0
+    dv[dv != 0] = 1
+    n = (np.sqrt((colors**2).sum(axis=1))[None, :] * dv.T) @ du
+    return np.sqrt(n / (n.sum() + 1e-9))
+
+
+def _c5_reference_edges(image: np.ndarray) -> np.ndarray:
+    """C5's compute_edges, literal."""
+    edges = np.zeros(image.shape)
+    padded = cv2.copyMakeBorder(image, 1, 1, 1, 1, cv2.BORDER_REFLECT)
+    for dx, dy in itertools.product([-1, 0, 1], repeat=2):
+        if dx or dy:
+            edges += np.abs(image - padded[1 + dx : image.shape[0] + 1 + dx, 1 + dy : image.shape[1] + 1 + dy, :])
+    return edges / 8
+
+
+def test_c5_histograms_match_c5s_own_code():
+    image = np.random.default_rng(3).uniform(0, 1, size=(32, 48, 3)) ** 2
+    image[:4, :4] = 0  # blocks left out (clipped or near black) are zero and do not count
+    mine = c5.histogram(image)
+    assert mine.shape == (64, 64, 2)
+    assert np.allclose(mine[..., 0], _c5_reference_histogram(image), atol=1e-12)
+    assert np.allclose(mine[..., 1], _c5_reference_histogram(_c5_reference_edges(image)), atol=1e-12)
+
+
+def test_c5_reads_photos_spread_through_the_folder():
+    assert c5.spread([1, 2, 3]) == [1, 2, 3]
+    assert c5.spread(list(range(70))) == [5, 15, 25, 35, 45, 55, 65]
+
+
+def test_white_balance_follows_c5_as_far_as_its_spread_allows(monkeypatch):
+    ctx = ImageContext(name="x.NEF", path=None, meta={})  # type: ignore[arg-type]
+    ctx.linear = scene(4600, 1.0, as_shot=(6000, 1.0))
+    light = D7100.illuminant(3800, 1.0)
+    monkeypatch.setattr(wb, "c5_estimate", lambda ctx: c5.Estimate(illuminant=light, spread=1.5, others=6))
+    p = wb.propose(ctx, keep_warm=False)
+    assert p.agent == "wb@3" and p.evidence["source"] == "c5" and p.band == "apply"
+    assert abs(wbmodel.mired(p.evidence["estimate"]["temp"]) - wbmodel.mired(3800)) < 3
+    assert abs(wbmodel.mired(p.evidence["classic"]["temp"]) - wbmodel.mired(4600)) < 12  # kept as evidence
+    monkeypatch.setattr(wb, "c5_estimate", lambda ctx: c5.Estimate(illuminant=light, spread=5.0, others=6))
+    unsure = wb.propose(ctx, keep_warm=False)
+    assert unsure.band == "as_shot" and unsure.route().review  # left as shot and queued, with the reason
+    assert "C5 unsure" in unsure.rationale
+    monkeypatch.setattr(wb, "c5_estimate", lambda ctx: None)  # no weights: the classic estimate
+    classic = wb.propose(ctx, keep_warm=False)
+    assert classic.evidence["source"] == "classic"
+    assert abs(wbmodel.mired(classic.evidence["estimate"]["temp"]) - wbmodel.mired(4600)) < 12
+
+
+def test_geocalib_turns_a_photo_without_lines(monkeypatch):
+    ctx = ImageContext(name="x.NEF", path=None, meta={"focal_length": 35.0})  # type: ignore[arg-type]
+    ctx.before = np.full((800, 1200, 3), 0.2, dtype=np.float32)  # no lines at all
+    monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(1.4, 0.6, 2.0, 2340.0))
+    p = geometry.propose(ctx)
+    assert p.agent == "geometry@3" and p.evidence["lines"] == "none" and p.evidence["source"] == "geocalib"
+    assert p.params == {"geometry": {"rotate_deg": 1.4}}
+    assert p.band == "apply" and not p.route().review  # applied automatically (ADR 0017)
+    ctx.faces = [Face(box=(0.35, 0.3, 0.3, 0.4), score=0.95, confirmed=True, cut_off=False)]
+    assert geometry.propose(ctx).band == "conservative"  # a portrait's tilt may be deliberate
+    ctx.faces = []
+    monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(1.4, 1.6, 2.0, None))
+    unsure = geometry.propose(ctx)
+    assert unsure.abstain and "GeoCalib is unsure" in unsure.rationale
+
+
+def test_geocalib_confirms_a_cautious_roll_from_level_lines(monkeypatch):
+    ctx = ImageContext(name="x.NEF", path=None, meta={})  # type: ignore[arg-type]
+    ctx.before = _turned_lines(horizontal=True, vertical=False)
+    monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: None)
+    assert geometry.propose(ctx).band != "apply"  # horizontals alone are cautious
+    monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(2.1, 0.5, 0.0, None))
+    confirmed = geometry.propose(ctx)
+    assert confirmed.band == "apply" and confirmed.params["geometry"]["rotate_deg"] == pytest.approx(2.0, abs=0.15)
+    monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(-1.0, 0.5, 0.0, None))
+    assert geometry.propose(ctx).band != "apply"  # disagreeing: still cautious
+
+
+@pytest.mark.learned
+@pytest.mark.skipif(not (c5.MODELS / c5.WEIGHTS).is_file(), reason="the C5 weights are not in models/")
+def test_c5_estimates_the_light_of_a_synthetic_scene():
+    lin = scene(4200, 1.0, as_shot=(5500, 1.0))
+    e = c5.estimate(c5.histogram(c5.image_of(lin)), [])
+    assert np.all(np.isfinite(e.illuminant)) and e.illuminant[1] == pytest.approx(1.0) and e.others == 0
+    assert e.spread > 0
+
+
+@pytest.mark.learned
+@pytest.mark.skipif(not (gravity.MODELS / gravity.WEIGHTS).is_file(), reason="the GeoCalib weights are not in models/")
+def test_geocalib_turns_the_same_way_as_the_lines():
+    reading = gravity.estimate(_turned_lines(horizontal=True, vertical=True), 35.0)
+    assert reading.turn == pytest.approx(2.0, abs=1.0)  # turned 2 degrees clockwise: turn back counter-clockwise
+    assert reading.uncertainty < 2.0 and reading.focal_prior == pytest.approx(35.0 / 23.5 * 1200)
 
 
 # --- harmonization -----------------------------------------------------------------------------------------------

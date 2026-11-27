@@ -30,6 +30,18 @@ with open(out, "wb") as fh:
 """
 
 
+@pytest.fixture(autouse=True)
+def _classic_agents(request, monkeypatch):
+    """Agents take their classic paths in tests unless a test is marked `learned` (C5 and GeoCalib, ADR 0017), so
+    results do not depend on whether models/ holds the weights."""
+    if "learned" in request.keywords:
+        return
+    from rie.agents import c5, gravity
+
+    monkeypatch.setattr(c5, "available", lambda: False)
+    monkeypatch.setattr(gravity, "available", lambda: False)
+
+
 @pytest.fixture
 def fake_rt(tmp_path, monkeypatch):
     """Path of a fake rawtherapee-cli; calls are logged as JSON lines to the returned log file."""

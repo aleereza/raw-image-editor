@@ -52,6 +52,9 @@ class ImageContext:
     focus: dict[str, Any] = field(default_factory=dict)
     linear: LinearRaw | None = None  # filled by the editor before the agents run
     before: np.ndarray | None = None  # the as-shot render, linear sRGB (h, w, 3), upright and lens-corrected
+    # C5 histograms of up to seven photos of the folder, by name: the other photos the white balance reads beside
+    # this one (ADR 0017).
+    references: list[tuple[str, np.ndarray]] = field(default_factory=list)
 
     def is_locked(self, group: str, name: str | None = None) -> bool:
         values = self.locked.get(group, {})

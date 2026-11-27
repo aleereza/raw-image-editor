@@ -1,11 +1,13 @@
 """Editing a folder (plan §2 step 5, §3.4, §4): everything kept is edited, and only the exceptions need a look.
 
-For each photo kept after culling (or every present photo with `all_photos`), several at a time:
+First, C5's histograms of up to seven photos spread through the photos the folder's edit covers (also when only
+some are edited again), which the white balance reads beside each photo (ADR 0017). Then, for each photo kept
+after culling (or every present photo with `all_photos`), several at a time:
 
 1. **Read** the raw file once (quarter-resolution linear camera RGB) and render it **as shot** with the fast
    preview profile: the base profile plus the owner's locked edits, and nothing else. That render is the "before".
-2. **Agents:** geometry measures the lines of the as-shot render; white balance and colour the linear raw;
-   exposure the as-shot render, through the look's tone curve.
+2. **Agents:** geometry measures the lines of the as-shot render and GeoCalib's reading of it; white balance (C5)
+   and colour the linear raw; exposure the as-shot render, through the look's tone curve.
 
 Then, for the folder: **harmonize** each scene's white balance and exposure, **route** every proposal by its
 confidence (applied, applied halfway, or as shot), add the technical baseline (noise reduction by the final
@@ -30,7 +32,7 @@ import cv2
 import numpy as np
 
 from . import locations
-from .agents import baseline, color, exposure, geometry, harmonize, qa, wb
+from .agents import baseline, c5, color, exposure, geometry, harmonize, qa, wb
 from .agents import colorspace as cs
 from .agents.context import ImageContext, load_contexts
 from .agents.linear import read_linear
@@ -334,6 +336,16 @@ def edit_folder(
             progress(step, done, total)
 
     report("measure", 0)
+    if c5.available() and run.photos:
+        # C5 reads each photo beside photos spread through everything the folder's edit covers, so editing one
+        # photo again gives what editing the whole folder gave.
+        paths = [p.ctx.path for p in run.photos]
+        if image_ids is not None:
+            covered = photos_to_edit(conn, folder_id, all_photos=all_photos)
+            paths = [c.path for c in load_contexts(conn, folder_id, folder, covered)] or paths
+        references = c5.references(paths, workers=settings.workers)
+        for photo in run.photos:
+            photo.ctx.references = references
     with ThreadPoolExecutor(max_workers=max(1, settings.workers)) as pool:
         for done, _ in enumerate(pool.map(lambda p: _measure(p, cfg, settings), run.photos), start=1):
             report("measure", done)

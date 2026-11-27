@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from rie import catalog, cli, config, evaluate
+from rie.agents import c5
 from rie.edit import EditSettings, edit_folder, photos_to_edit
 from rie.edit_report import write_report
 from rie.engine.recipe import parse
@@ -81,6 +82,32 @@ def test_edit_folder_edits_real_nefs_and_writes_nothing_in_the_folder(tmp_path):
     assert data["metrics"]["photos"] == 2 and page.read_text().count('class="photo"') == 2
 
 
+@pytest.mark.rawtherapee
+@pytest.mark.learned
+@needs_rawtherapee
+@pytest.mark.skipif(not c5.available(), reason="the C5 weights are not in models/")
+def test_editing_one_photo_again_reads_the_same_folder_photos_beside_it(tmp_path):
+    shoot = tmp_path / "shoot"
+    shoot.mkdir()
+    for nef in sample_nefs(2):
+        shutil.copyfile(nef, shoot / nef.name)
+        (shoot / nef.name).chmod(0o444)
+    cfg = config.parse({"paths": {"cache": str(tmp_path / "cache"), "data": str(tmp_path / "data")}})
+    conn = catalog.connect(cfg.catalog_path)
+    try:
+        folder_id = scan_folder(conn, cfg, shoot).folder_id
+        settings = EditSettings(workers=2, size=512, qa=False)
+        whole = edit_folder(conn, cfg, folder_id, settings=settings)
+        image_id = whole.photos[0].ctx.image_id
+        assert image_id is not None
+        one = edit_folder(conn, cfg, folder_id, settings=settings, image_ids=[image_id])
+    finally:
+        conn.close()
+    first, again = whole.photos[0].proposals["white_balance"], one.photos[0].proposals["white_balance"]
+    assert first.evidence["c5"]["others"] == again.evidence["c5"]["others"] == 1  # the other photo of the folder
+    assert first.evidence["estimate"] == again.evidence["estimate"]
+
+
 def test_eval_reads_the_catalog_without_migrating_it(tmp_path):
     cfg = config.parse({"paths": {"cache": str(tmp_path / "cache"), "data": str(tmp_path / "data")}})
     old = catalog.connect(cfg.catalog_path, migrate=False)
@@ -120,7 +147,7 @@ def test_eval_compares_a_sidecar_white_balance_and_reads_the_folder_only(tmp_pat
     assert row["folder"] == 0 and row["scene"] is not None  # folders by number; scenes from the metadata
     for key in ("estimate_error", "applied_neutral_error", "applied_error", "camera_error"):
         assert row[key] >= 0
-    assert data["agents"] == {"wb": evaluate.wb.VERSION, "geometry": "geometry@2", "harmonize": "harmonize@1"}
+    assert data["agents"] == {"wb": evaluate.wb.VERSION, "geometry": "geometry@3", "harmonize": "harmonize@1"}
 
 
 def _ref(folder: str, name: str, turn: float) -> evaluate.Reference:

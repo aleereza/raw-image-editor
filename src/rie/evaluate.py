@@ -15,10 +15,12 @@ still open it. Each row names its folder by its place in the list given, not by 
   (`applied_neutral`, the measure of accuracy, since the owner clicked something neutral) and keeping some of warm
   light's warmth as `rie edit` does by default (`applied`, plan §4.6). Scenes are Phase 1's, grouped from the
   metadata of every raw file in the folder (capture time, flash and light, without the look, which needs the
-  previews).
+  previews). C5 reads each photo beside up to seven raw files spread through its folder, as `rie edit` does with the
+  photos it edits (ADR 0017).
 - **Straightening (§4.5):** the owner's `[Rotation] Degree` against what `rie edit` would turn the as-shot render
   by: the agent's proposal routed by confidence (target: median error 0.3 degrees or less). The photos are the ones
-  the owner turned and, from each folder, as many the owner left level, spread through the folder.
+  the owner turned and, from each folder, as many the owner left level, spread through the folder. GeoCalib gets
+  each photo's focal length from its metadata.
 """
 
 from __future__ import annotations
@@ -37,8 +39,8 @@ import cv2
 import numpy as np
 
 from . import catalog, locations
+from .agents import c5, geometry, harmonize, wb
 from .agents import colorspace as cs
-from .agents import geometry, harmonize, wb
 from .agents.context import Face, ImageContext
 from .agents.linear import read_linear
 from .agents.proposal import Proposal
@@ -256,10 +258,14 @@ def eval_wb(
     work = cfg.paths.cache / "eval" / "probe"
     meta: dict[Path, dict[str, dict[str, Any]]] = {}
     scene_of: dict[tuple[Path, str], int] = {}
+    references: dict[Path, list[tuple[str, np.ndarray]]] = {}
     for folder in dict.fromkeys(r.folder for r, _ in picks):
         meta[folder] = metadata(folder)
         for name, number in scenes(meta[folder]).items():
             scene_of[(folder, name)] = folders.index(folder) * 100_000 + number
+        if c5.available():
+            order = sorted(meta[folder], key=lambda n: (str(meta[folder][n].get("capture_time") or ""), n))
+            references[folder] = c5.references([folder / n for n in order], workers=workers)
     faces = {(r.folder, r.name): _faces(conn, r.folder / r.name, cfg) for r, _ in picks}  # SQLite stays here
 
     def one(item: tuple[Reference, dict[str, str]]) -> tuple[Any, ...]:
@@ -270,6 +276,7 @@ def eval_wb(
             name=ref.name, path=path, meta=meta[ref.folder].get(ref.name, {}), faces=faces[(ref.folder, ref.name)]
         )
         ctx.linear = lin
+        ctx.references = references.get(ref.folder, [])
         neutral, warm = wb.propose(ctx, keep_warm=False), wb.propose(ctx)  # `rie edit` keeps warmth by default
         owner = measured_multipliers(path, section, ref.sidecar.get("Version", {}), lin.as_shot, cfg, work)
         return lin.camera, lin.as_shot, owner, neutral, warm
@@ -322,6 +329,8 @@ def eval_wb(
                 "camera_error": error(as_shot),
                 "estimate_mired": round(wbmodel.mired(estimate["temp"]) - wbmodel.mired(owner_t), 1),
                 "faces": len(faces[(ref.folder, ref.name)]),
+                "source": neutral.evidence.get("source"),
+                "c5_spread": (neutral.evidence.get("c5") or {}).get("spread"),
             }
         )
     rows = result.rows
@@ -350,16 +359,20 @@ def eval_geometry(
     folders = folders or list(dict.fromkeys(r.folder for r in refs))
     items = [r for r in refs if abs(r.turn) > TURNED] + level_sample(refs)
     faces = {(r.folder, r.name): _faces(conn, r.folder / r.name, cfg) for r in items}  # SQLite stays here
+    meta = {folder: metadata(folder) for folder in dict.fromkeys(r.folder for r in items)}
     recipe = parse_recipe({"schema": SCHEMA, "params": {}})
 
     def one(ref: Reference) -> dict[str, Any]:
         path = ref.folder / ref.name
         render = cached_render(path, recipe, cfg, image_key=quick_hash(path), size=2048, preview=True)
-        ctx = ImageContext(name=ref.name, path=path, meta={}, faces=faces[(ref.folder, ref.name)])
+        ctx = ImageContext(
+            name=ref.name, path=path, meta=meta[ref.folder].get(ref.name, {}), faces=faces[(ref.folder, ref.name)]
+        )
         ctx.before = _linear(render.output).astype(np.float32)
         proposal = geometry.propose(ctx)
         routed = proposal.route()
         applied = float(routed.applied.get("geometry", {}).get("rotate_deg", 0.0) or 0.0)
+        reading = proposal.evidence.get("gravity") or {}
         return {
             "folder": folders.index(ref.folder),
             "name": ref.name,
@@ -367,6 +380,9 @@ def eval_geometry(
             "roll": proposal.evidence["roll"],
             "lines": proposal.evidence["lines"],
             "support": proposal.evidence["support"],
+            "source": proposal.evidence.get("source"),
+            "geocalib": reading.get("turn"),
+            "geocalib_uncertainty": reading.get("uncertainty"),
             "confidence": round(proposal.confidence, 3),
             "band": routed.band,
             "applied": round(applied, 2),

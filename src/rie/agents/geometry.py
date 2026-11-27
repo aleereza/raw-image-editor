@@ -1,4 +1,4 @@
-"""Geometry agent v1: straightening (plan §4.5).
+"""Geometry agent v3: straightening (plan §4.5, ADR 0017).
 
 Line segments (OpenCV's LSD) on the as-shot render, which RawTherapee has already corrected for lens distortion,
 feed length-weighted histograms of how far near-horizontal and near-vertical lines lean. Verticals far from the
@@ -9,7 +9,13 @@ reviewed); lines that disagree, or too little line, abstain. Vertical lines alon
 they lean whenever the camera points up or down, and against the owner's own straightening they suggested a turn
 on more photos the owner left level than on photos the owner turned (ADR 0016). Photos dominated by a face
 (portraits and close-ups) count lines less. Stripes in clothing and other textures make peaks of their own, which
-the agreement test catches. GeoCalib and a separate horizon detector (plan §4.5, items 2 and 3) are not used yet.
+the agreement test catches.
+
+GeoCalib (`rie.agents.gravity`, plan §4.5 item 3) reads the camera's roll from the whole picture, with an
+uncertainty. Where the lines give no confident roll, GeoCalib's is applied when its uncertainty is at most
+GEOCALIB_SURE: the owner judged its turns right, even on photos left level in the past (ADR 0017). Where the lines
+give a cautious roll, GeoCalib agreeing within AGREE_AXES makes it confident. A separate horizon detector (item 2)
+is not used.
 
 Policy: a roll under MIN_ROLL is left alone; up to MAX_ROLL it is corrected; above that it is probably deliberate
 and only flagged. RawTherapee's AutoFill enlarges the turned picture to hide the corners (ADR 0001), so no crop is
@@ -25,10 +31,11 @@ import cv2
 import numpy as np
 
 from . import colorspace as cs
+from . import gravity
 from .context import Face, ImageContext
-from .proposal import Proposal
+from .proposal import APPLY, Proposal
 
-VERSION = "geometry@2"
+VERSION = "geometry@3"
 MIN_ROLL, MAX_ROLL = 0.2, 8.0  # degrees (plan §4.5)
 WINDOW = 10.0  # degrees around horizontal and vertical that count as lines to straighten by
 BANDWIDTH = 0.15  # degrees, kernel of the lean histogram
@@ -40,6 +47,9 @@ AGREE_AXES = 0.5  # degrees within which horizontals and verticals agree
 ACT_ON = ("both", "horizontals")  # the line evidence the agent turns a photo on
 SINGLE_FACTOR = 0.7  # confidence factor for horizontals alone (both kinds agreeing: 0.95)
 FACE_DOMINANT = 0.06  # a trusted face larger than this share of the frame makes the photo a portrait
+GEOCALIB_SURE = 1.0  # degrees of roll uncertainty up to which GeoCalib's roll is acted on (ADR 0017)
+GEOCALIB_CONFIDENCE = 0.9  # confidence of a roll from GeoCalib alone, or of a cautious roll GeoCalib confirms
+PORTRAIT_FACTOR = 0.6  # a portrait's tilt is often deliberate
 WORK_EDGE = 1280
 MARGIN = 0.01  # a face must stay this far (share of the frame) inside the visible area
 
@@ -146,37 +156,70 @@ def gray_of(render: np.ndarray) -> np.ndarray:
     return (cs.encode_srgb(cs.luminance(small)) * 255).astype(np.uint8)
 
 
+def gravity_estimate(ctx: ImageContext) -> gravity.Gravity | None:
+    """GeoCalib's reading of the as-shot render, with the focal length from the metadata; None without weights."""
+    assert ctx.before is not None
+    if not gravity.available():
+        return None
+    return gravity.estimate(ctx.before, ctx.meta.get("focal_length"))
+
+
 def propose(ctx: ImageContext) -> Proposal:
     assert ctx.before is not None, "the editor renders the photo as shot before the agents run"
     h, w = ctx.before.shape[:2]
     roll, support, lines = estimate(gray_of(ctx.before))
     as_shot = {"geometry": {"rotate_deg": 0.0}}
-    evidence = {"roll": None if roll is None else round(roll, 3), "support": round(support, 2), "lines": lines}
-    if roll is None or lines not in ACT_ON:
-        why = {
-            "disagree": "level and plumb lines disagree",
-            "verticals": f"only vertical lines ({roll or 0.0:+.1f} degrees), which also lean when the camera tilts",
-        }.get(lines, "too few straight lines to judge")
-        return Proposal(
-            VERSION,
-            {"geometry": {"rotate_deg": 0.0}},
-            0.0,
-            f"{why}: left as shot",
-            as_shot=as_shot,
-            evidence=evidence,
-            abstain=True,
-        )
-    confidence = min(1.0, support / STRONG_SUPPORT) ** 0.5 * (0.95 if lines == "both" else SINGLE_FACTOR)
+    evidence: dict = {
+        "roll": None if roll is None else round(roll, 3),
+        "support": round(support, 2),
+        "lines": lines,
+        "source": "lines",
+        "gravity": None,
+    }
     biggest = max((f.box[2] * f.box[3] for f in ctx.trusted_faces), default=0.0)
-    if biggest > FACE_DOMINANT:
-        confidence *= 0.6  # a portrait's lines are background; its tilt is often deliberate
+    portrait = PORTRAIT_FACTOR if biggest > FACE_DOMINANT else 1.0  # a portrait's lines are background
+    basis = "to level the lines"
+    if roll is not None and lines in ACT_ON:
+        confidence = min(1.0, support / STRONG_SUPPORT) ** 0.5 * (0.95 if lines == "both" else SINGLE_FACTOR)
+        confidence *= portrait
+        if confidence < APPLY:
+            reading = gravity_estimate(ctx)
+            if reading is not None:
+                evidence["gravity"] = reading.to_json()
+                if reading.uncertainty <= GEOCALIB_SURE and abs(reading.turn - roll) <= AGREE_AXES:
+                    confidence = max(confidence, GEOCALIB_CONFIDENCE * portrait)
+                    basis = "to level the lines, as GeoCalib reads it too"
+    else:
+        reading = gravity_estimate(ctx)
+        if reading is not None:
+            evidence["gravity"] = reading.to_json()
+        if reading is None or reading.uncertainty > GEOCALIB_SURE:
+            why = {
+                "disagree": "level and plumb lines disagree",
+                "verticals": f"only vertical lines ({roll or 0.0:+.1f} degrees), which also lean when the camera tilts",
+            }.get(lines, "too few straight lines to judge")
+            if reading is not None:
+                why += f", and GeoCalib is unsure (±{reading.uncertainty:.1f} degrees)"
+            return Proposal(
+                VERSION,
+                {"geometry": {"rotate_deg": 0.0}},
+                0.0,
+                f"{why}: left as shot",
+                as_shot=as_shot,
+                evidence=evidence,
+                abstain=True,
+            )
+        roll = reading.turn
+        confidence = GEOCALIB_CONFIDENCE * portrait
+        evidence["source"] = "geocalib"
+        basis = f"by GeoCalib's reading of the camera's tilt (±{reading.uncertainty:.1f})"
     flags = []
     if abs(roll) < MIN_ROLL:
         return Proposal(
             VERSION,
             {"geometry": {"rotate_deg": 0.0}},
             confidence,
-            f"level: lines lean {roll:+.2f} degrees",
+            f"level: {'lines lean' if evidence['source'] == 'lines' else 'GeoCalib reads'} {roll:+.2f} degrees",
             as_shot=as_shot,
             evidence=evidence,
         )
@@ -185,7 +228,7 @@ def propose(ctx: ImageContext) -> Proposal:
             VERSION,
             {"geometry": {"rotate_deg": 0.0}},
             confidence,
-            f"lines lean {roll:+.1f} degrees: probably deliberate, left as shot",
+            f"tilted {roll:+.1f} degrees: probably deliberate, left as shot",
             as_shot=as_shot,
             evidence=evidence,
             flags=["deliberate tilt?"],
@@ -200,7 +243,7 @@ def propose(ctx: ImageContext) -> Proposal:
             VERSION,
             {"geometry": {"rotate_deg": 0.0}},
             confidence,
-            f"lines lean {roll:+.1f} degrees, but straightening would cut a face",
+            f"tilted {roll:+.1f} degrees, but straightening would cut a face",
             as_shot=as_shot,
             evidence=evidence,
             flags=flags,
@@ -213,7 +256,7 @@ def propose(ctx: ImageContext) -> Proposal:
         VERSION,
         {"geometry": {"rotate_deg": round(angle, 2)}},
         confidence,
-        f"turned {abs(angle):.2f} degrees {direction} to level the lines{note}",
+        f"turned {abs(angle):.2f} degrees {direction} {basis}{note}",
         as_shot=as_shot,
         evidence=evidence,
         flags=flags,

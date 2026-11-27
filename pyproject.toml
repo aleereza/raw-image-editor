@@ -24,6 +24,10 @@ dependencies = [
   "fastapi>=0.120",
   "uvicorn>=0.38",
   "colour-science>=0.4.6,<0.5",
+  # Learned estimators (ADR 0017): C5's network for white balance and GeoCalib for straightening, both vendored in
+  # src/rie/vendor. PyTorch is the CPU build ([tool.uv.sources]); kornia resizes images for GeoCalib.
+  "torch==2.15.*",
+  "kornia>=0.9,<0.10",
 ]
 
 [dependency-groups]
@@ -54,6 +58,15 @@ spikes = [
 [project.scripts]
 rie = "rie.cli:main"
 
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+# The CPU build of PyTorch (about 210 MB instead of several GB with CUDA); every model also runs on the CPU (D5).
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/rie"]
 
@@ -62,13 +75,15 @@ addopts = "-ra"
 testpaths = ["tests"]
 markers = [
   "rawtherapee: needs rawtherapee-cli and a sample NEF (set RIE_SAMPLE_NEF or keep samples in ~/.cache/rie/samples)",
+  "learned: runs C5 or GeoCalib (skipped when models/ lacks the weights); other tests use the classic agents",
 ]
 
 [tool.ruff]
 line-length = 120
 target-version = "py313"
 # Markdown stays as written: the formatter would otherwise reformat code blocks in the plan and the docs.
-extend-exclude = ["*.md"]
+# Vendored third-party code (src/rie/vendor) keeps its own style.
+extend-exclude = ["*.md", "src/rie/vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -79,6 +94,7 @@ extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.pyright]
 include = ["src", "tests"]
+exclude = ["src/rie/vendor"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
 venvPath = "."

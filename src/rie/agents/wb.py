@@ -1,18 +1,22 @@
-"""White balance agent v1 (plan §4.6).
+"""White balance agent v3 (plan §4.6, ADR 0017).
 
 It works in the linear camera RGB of the raw file, with clipped and near-black blocks left out:
 
-1. **Candidates** for the light's colour: the camera's own (as shot, weighed more when the flash fired, since
-   the camera then balances for the flash), gray-world, shades-of-gray (p = 6), gray-edge (p = 6, on a lightly
-   blurred image) and the brightest unclipped blocks (white patch). Each becomes a RawTherapee temperature and
-   green (`rie.engine.wbmodel`).
-2. **Priors:** each candidate is weighed by how natural it makes the skin of the confirmed faces look (a hue range
-   in CIELAB, wide enough for every skin tone, so no tone is forced), and fused as a weighted median in mired and
-   in log green. The statistics read green poorly (foliage, coloured walls), so the fused green moves only halfway
-   from the camera's. Disagreement between the candidates, a frame whose parts point to different lights (mixed
-   light), implausible skin, a green far from the daylight and blackbody locus, and few usable pixels lower the
-   confidence.
-3. **Intent:** the default is neutral. Clearly warm light (below 4200 K) keeps some of its warmth: the white
+1. **C5**, a network that reads the photo's colour histograms beside those of other photos from the same folder
+   (`rie.agents.c5`), estimates the light. Its confidence comes from how far its probability map spreads: up to
+   C5_SURE degrees it is applied, beyond C5_UNSURE it is left as shot. Without the C5 weights, the classic estimate
+   below takes its place.
+2. **Classic candidates** for the light's colour, wb@1's estimate (kept as evidence and as the fallback): the
+   camera's own (as shot, weighed more when the flash fired, since the camera then balances for the flash),
+   gray-world, shades-of-gray (p = 6), gray-edge (p = 6, on a lightly blurred image) and the brightest unclipped
+   blocks (white patch). Each becomes a RawTherapee temperature and green (`rie.engine.wbmodel`). Each is weighed
+   by how natural it makes the skin of the confirmed faces look (a hue range in CIELAB, wide enough for every skin
+   tone, so no tone is forced), and they are fused as a weighted median in mired and in log green. The statistics
+   read green poorly (foliage, coloured walls), so the fused green moves only halfway from the camera's, and the
+   candidates' disagreement sets the confidence.
+3. **Checks** on either estimate: a frame whose parts point to different lights (mixed light), implausible skin,
+   a green far from the daylight and blackbody locus, and few usable pixels lower the confidence.
+4. **Intent:** the default is neutral. Clearly warm light (below 4200 K) keeps some of its warmth: the white
    balance is set so CAT16 with a degree of adaptation down to WARM_DEGREE at 3200 K would see it, which leaves a
    small warm cast. `keep_warm=False` neutralizes fully.
 
@@ -28,11 +32,12 @@ import cv2
 import numpy as np
 
 from ..engine import wbmodel
+from . import c5
 from . import colorspace as cs
 from .context import ImageContext
 from .proposal import Proposal
 
-VERSION = "wb@1"
+VERSION = "wb@3"
 WEIGHTS = {
     "as_shot": 2.0,
     "gray_edge": 1.5,
@@ -53,6 +58,8 @@ SMALL_MIRED, SMALL_GREEN = 12.0, 0.03  # changes up to this are applied without 
 SPREAD_MIRED, SPREAD_GREEN = 30.0, 0.15  # candidate spreads at which agreement confidence falls to 1/e
 GREEN_SHARE = 0.5  # how far the fused green moves from the camera's
 MIXED_MIRED = 80.0  # spread of the frame's parts above which the light counts as mixed
+C5_SURE, C5_UNSURE = 2.5, 4.0  # degrees of C5's spread: confident up to the first, as shot from the second (ADR 0017)
+C5_CONFIDENCE = (0.9, 0.4)  # confidence at C5_SURE and C5_UNSURE, straight in between
 
 
 @dataclass
@@ -206,6 +213,26 @@ def mixed_light(ctx: ImageContext) -> float:
     return 2.0 * _wmad(values, wts, _wmedian(values, wts))
 
 
+def c5_estimate(ctx: ImageContext) -> c5.Estimate | None:
+    """C5's estimate with up to six other photos of the folder (`ctx.references`); None without the weights."""
+    lin = ctx.linear
+    assert lin is not None
+    if not c5.available():
+        return None
+    others = [h for name, h in ctx.references if name != ctx.name]
+    return c5.estimate(c5.histogram(c5.image_of(lin)), others)
+
+
+def c5_confidence(spread: float) -> float:
+    """Confidence in C5's estimate from the spread of its probability map, in degrees."""
+    sure, unsure = C5_CONFIDENCE
+    if spread <= C5_SURE:
+        return sure
+    if spread >= C5_UNSURE:
+        return unsure
+    return sure + (unsure - sure) * (spread - C5_SURE) / (C5_UNSURE - C5_SURE)
+
+
 def warm_degree(temp: float) -> float:
     """CAT16 degree of adaptation for light of this temperature: WARM_DEGREE for warm light, 1 for the rest."""
     if temp >= WARM_NONE:
@@ -243,10 +270,26 @@ def propose(ctx: ImageContext, *, keep_warm: bool = True) -> Proposal:
     spread_green = _wmad(log_greens, weights, centre_green)
     temp = wbmodel.from_mired(centre_mired)
     green = math.exp(math.log(g0) + GREEN_SHARE * (centre_green - math.log(g0)))
+    classic = {"temp": round(temp), "green": round(green, 4)}
 
     confidence = math.exp(-((spread_mired / SPREAD_MIRED) ** 2)) * math.exp(-((spread_green / SPREAD_GREEN) ** 2))
+    if len(found) <= 2:
+        confidence *= 0.6
     notes = []
     flags = []
+    learned = c5_estimate(ctx)
+    learned_json = None
+    source = "classic"
+    if learned is not None:
+        t, g = cam.temperature(1.0 / learned.illuminant)
+        learned_json = {"temp": round(t), "green": round(g, 4), "spread": round(learned.spread, 2)}
+        learned_json["others"] = learned.others
+        if wbmodel.MIN_TEMP < t < wbmodel.MAX_TEMP and 0.2 < g < 5:
+            temp, green, source = t, g, "c5"
+            confidence = c5_confidence(learned.spread)
+            centre_green = math.log(g)
+            if learned.spread >= C5_UNSURE:
+                notes.append(f"C5 unsure (spread {learned.spread:.1f} degrees)")
     mixed = mixed_light(ctx)
     if mixed > MIXED_MIRED:
         confidence *= 0.85
@@ -266,8 +309,6 @@ def propose(ctx: ImageContext, *, keep_warm: bool = True) -> Proposal:
     if abs(centre_green) > 0.15:
         confidence *= 0.8
         notes.append("unusually green or magenta light")
-    if len(found) <= 2:
-        confidence *= 0.6
     confidence = min(0.97, max(0.05, confidence))
 
     warmth = ""
@@ -283,6 +324,9 @@ def propose(ctx: ImageContext, *, keep_warm: bool = True) -> Proposal:
         "candidates": [c.to_json() for c in found],
         "camera": {"temp": round(t0), "green": round(g0, 4)},
         "estimate": {"temp": round(temp), "green": round(green, 4)},
+        "source": source,
+        "c5": learned_json,
+        "classic": classic,
         "final": {"temp": round(final_temp), "green": round(final_green, 4)},
         "spread_mired": round(spread_mired, 1),
         "spread_green": round(spread_green, 4),
@@ -291,8 +335,14 @@ def propose(ctx: ImageContext, *, keep_warm: bool = True) -> Proposal:
         "skin_ok": None if skin_ok is None else round(skin_ok, 3),
         **{k: round(v, 4) for k, v in stats.items()},
     }
-    agreeing = sorted((c for c in found if abs(wbmodel.mired(c.temp) - centre_mired) <= 8), key=lambda c: -c.weight)
-    basis = " and ".join(c.name.replace("_", "-") for c in agreeing[:2]) or "the candidates"
+    agreeing = sorted(
+        (c for c in found if abs(wbmodel.mired(c.temp) - wbmodel.mired(temp)) <= 8), key=lambda c: -c.weight
+    )
+    names = [c.name.replace("_", "-") for c in agreeing[:2]]
+    if source == "c5":
+        basis = "C5" + (f", with {' and '.join(names)}" if names else "")
+    else:
+        basis = " and ".join(names) or "the candidates"
     note = f"; {', '.join(notes)}" if notes else ""
     same = (
         abs(wbmodel.mired(final_temp) - wbmodel.mired(t0)) < SAME_MIRED and abs(math.log(final_green / g0)) < SAME_GREEN
