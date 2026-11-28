@@ -41,6 +41,10 @@ class ResetRequest(BaseModel):
     group: str
 
 
+class AcceptRequest(BaseModel):
+    group: str
+
+
 class LockRequest(BaseModel):
     key: str
     locked: bool
@@ -167,6 +171,10 @@ def add_review_routes(
     @app.post("/api/photos/{image_id}/reset")
     def reset(image_id: int, body: ResetRequest, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
         return act(conn, image_id, lambda: review.reset(conn, image_id, body.group))
+
+    @app.post("/api/photos/{image_id}/accept")
+    def accept(image_id: int, body: AcceptRequest, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:
+        return act(conn, image_id, lambda: review.apply_proposal(conn, image_id, body.group))
 
     @app.post("/api/photos/{image_id}/lock")
     def lock(image_id: int, body: LockRequest, conn: sqlite3.Connection = Depends(db)) -> dict[str, Any]:

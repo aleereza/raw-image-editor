@@ -361,7 +361,7 @@ def test_geocalib_turns_a_photo_without_lines(monkeypatch):
     ctx.before = np.full((800, 1200, 3), 0.2, dtype=np.float32)  # no lines at all
     monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(1.4, 0.6, 2.0, 2340.0))
     p = geometry.propose(ctx)
-    assert p.agent == "geometry@3" and p.evidence["lines"] == "none" and p.evidence["source"] == "geocalib"
+    assert p.agent == "geometry@4" and p.evidence["lines"] == "none" and p.evidence["source"] == "geocalib"
     assert p.params == {"geometry": {"rotate_deg": 1.4}}
     assert p.band == "apply" and not p.route().review  # applied automatically (ADR 0017)
     ctx.faces = [Face(box=(0.35, 0.3, 0.3, 0.4), score=0.95, confirmed=True, cut_off=False)]
@@ -380,6 +380,12 @@ def test_geocalib_confirms_a_cautious_roll_from_level_lines(monkeypatch):
     monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(2.1, 0.5, 0.0, None))
     confirmed = geometry.propose(ctx)
     assert confirmed.band == "apply" and confirmed.params["geometry"]["rotate_deg"] == pytest.approx(2.0, abs=0.15)
+    # Between GEOCALIB_SURE (1.0) and GEOCALIB_CONFIRM (3.0): confirms agreeing lines (ADR 0020).
+    monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(2.1, 2.2, 0.0, None))
+    assert geometry.propose(ctx).band == "apply"
+    # Above GEOCALIB_CONFIRM: too noisy to confirm even when agreeing.
+    monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(2.1, 4.0, 0.0, None))
+    assert geometry.propose(ctx).band != "apply"
     monkeypatch.setattr(geometry, "gravity_estimate", lambda ctx: gravity.Gravity(-1.0, 0.5, 0.0, None))
     assert geometry.propose(ctx).band != "apply"  # disagreeing: still cautious
 

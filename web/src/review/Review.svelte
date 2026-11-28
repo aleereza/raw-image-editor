@@ -2,9 +2,10 @@
   // The review page (plan §2 step 6, §6 Review): everything kept is edited; this shows the exceptions first, with
   // before/after, a chip per agent with its reason and confidence, and the owner's nudges, resets, locks, apply to
   // scene, the look lab, open in RawTherapee and export.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { reviewApi, reviewUrls, type Edit, type FolderEdits, type Job, type Proposal } from "./api";
   import LookLab from "./LookLab.svelte";
+  import ReviewHelp from "./ReviewHelp.svelte";
 
   const LABELS: Record<string, string> = {
     geometry: "Straighten",
@@ -36,6 +37,15 @@
   let jobs = $state<Job[]>([]);
   let pending = $state({ ev: 0, warmth: 0, rotate: 0 });
   let busy = $state(false);
+  let viewEl: HTMLDivElement | undefined = $state();
+  let photoEl: HTMLImageElement | undefined = $state();
+  let viewW = $state(0);
+  let viewH = $state(0);
+  let imgNatural = $state({ id: -1, w: 0, h: 0 });
+  let zoom = $state(false);
+  let offset = $state({ x: 0, y: 0 });
+  let dragging = $state(false);
+  let zoomFocus = $state<[number, number] | null>(null);
 
   const needing = (e: Edit) => e.review && !e.reviewed;
   const shown = $derived(data ? data.edits.filter((e) => filter === "all" || needing(e) || e.id === currentId) : []);
@@ -52,10 +62,115 @@
   const warmMatrix = $derived(
     `${1 + 0.03 * pending.warmth} 0 0 0 0  0 1 0 0 0  0 0 ${1 - 0.03 * pending.warmth} 0 0  0 0 0 1 0`,
   );
-  const previewStyle = $derived(
-    `filter: brightness(${Math.pow(2, (0.15 * pending.ev) / 2.2).toFixed(3)}) url(#warmth);` +
-      ` transform: rotate(${(-0.1 * pending.rotate).toFixed(2)}deg)`,
-  );
+  const zoomedSize = $derived.by(() => {
+    if (!zoom || currentId === null || imgNatural.id !== currentId || !imgNatural.w || !imgNatural.h) return null;
+    const fitScale = viewW && viewH ? Math.min(viewW / imgNatural.w, viewH / imgNatural.h, 1) : 1;
+    const scale = Math.max(1, fitScale * 2);
+    return { w: imgNatural.w * scale, h: imgNatural.h * scale };
+  });
+  const photoStyle = $derived.by(() => {
+    const parts: string[] = [];
+    if (!showBefore) {
+      parts.push(`filter: brightness(${Math.pow(2, (0.15 * pending.ev) / 2.2).toFixed(3)}) url(#warmth)`);
+    }
+    const transforms: string[] = [];
+    if (zoomedSize) {
+      parts.push(`width: ${zoomedSize.w}px`, `height: ${zoomedSize.h}px`);
+      transforms.push(`translate(${offset.x}px, ${offset.y}px)`);
+    }
+    if (!showBefore && pending.rotate) {
+      transforms.push(`rotate(${(-0.1 * pending.rotate).toFixed(2)}deg)`);
+    }
+    if (transforms.length) parts.push(`transform: ${transforms.join(" ")}`);
+    return parts.join("; ");
+  });
+
+  function clampOffset(x: number, y: number): { x: number; y: number } {
+    if (!zoomedSize) return { x, y };
+    const along = (value: number, size: number, view: number) =>
+      size <= view ? (view - size) / 2 : Math.min(0, Math.max(view - size, value));
+    return { x: along(x, zoomedSize.w, viewW), y: along(y, zoomedSize.h, viewH) };
+  }
+
+  function onPhotoLoad() {
+    if (photoEl && photoEl.naturalWidth > 0 && currentId !== null) {
+      imgNatural = { id: currentId, w: photoEl.naturalWidth, h: photoEl.naturalHeight };
+    }
+  }
+
+  function toggleZoom(focus: [number, number] = [0.5, 0.5]) {
+    if (!current) return;
+    zoom = !zoom;
+    zoomFocus = zoom ? focus : null;
+  }
+
+  function onDoubleClick(event: MouseEvent) {
+    if (!current || !photoEl || (event.target as HTMLElement).closest("button")) return;
+    if (zoom) {
+      zoom = false;
+      zoomFocus = null;
+      return;
+    }
+    const rect = photoEl.getBoundingClientRect();
+    const u = rect.width ? Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) : 0.5;
+    const v = rect.height ? Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)) : 0.5;
+    toggleZoom([u, v]);
+  }
+
+  // Drag or scroll (mouse wheel / two-finger touchpad) to pan while zoomed, clamped to the photo's edges.
+  let drag: { x: number; y: number; ox: number; oy: number } | null = null;
+  function onPointerDown(event: PointerEvent) {
+    if (!zoomedSize || event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+    drag = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
+    dragging = true;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+  function onPointerMove(event: PointerEvent) {
+    if (!drag) return;
+    offset = clampOffset(drag.ox + event.clientX - drag.x, drag.oy + event.clientY - drag.y);
+  }
+  function onPointerUp() {
+    drag = null;
+    dragging = false;
+  }
+
+  $effect(() => {
+    const id = currentId;
+    void showBefore;
+    if (id !== null && photoEl?.complete && photoEl.naturalWidth > 0) {
+      imgNatural = { id, w: photoEl.naturalWidth, h: photoEl.naturalHeight };
+    }
+  });
+
+  $effect(() => {
+    const size = zoomedSize;
+    const w = viewW;
+    const h = viewH;
+    const focus = zoomFocus;
+    if (!size || !w || !h) return;
+    if (focus) {
+      const [u, v] = focus;
+      offset = clampOffset(w / 2 - u * size.w, h / 2 - v * size.h);
+      zoomFocus = null;
+    } else {
+      const cur = untrack(() => offset);
+      const next = clampOffset(cur.x, cur.y);
+      if (next.x !== cur.x || next.y !== cur.y) offset = next;
+    }
+  });
+
+  $effect(() => {
+    const el = viewEl;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!zoomedSize || event.ctrlKey) return;
+      event.preventDefault();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientHeight : 1;
+      offset = clampOffset(offset.x - event.deltaX * unit, offset.y - event.deltaY * unit);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  });
 
   function readHash() {
     folderId = Number(new URLSearchParams(location.hash.slice(1)).get("folder")) || null;
@@ -67,7 +182,9 @@
       data = await reviewApi.edits(folderId);
       document.title = `Review · ${data.folder.name} · Raw Image Editor`;
       if (!data.edits.some((e) => e.id === currentId)) {
-        currentId = (data.edits.find(needing) ?? data.edits[0])?.id ?? null;
+        const picked = data.edits.find(needing) ?? data.edits[0] ?? null;
+        currentId = picked?.id ?? null;
+        pickDefaultGroup(picked);
       }
       if (filter === "review" && !data.edits.some(needing)) filter = "all";
       error = "";
@@ -86,14 +203,53 @@
     return AGENT_GROUP[p.agent.split("@")[0]] ?? p.agent;
   }
 
-  function value(e: Edit, g: string): string {
-    const p = e.params[g] ?? {};
+  function formatParams(g: string, p: Record<string, unknown>): string {
     if (g === "white_balance") return p.as_shot ? "as shot" : p.temperature_k ? `${p.temperature_k} K · ${Number(p.tint).toFixed(2)}` : "as shot";
     if (g === "exposure") return `${Number(p.ev ?? 0) >= 0 ? "+" : ""}${Number(p.ev ?? 0).toFixed(2)} EV` + (p.shadows ? ` · shadows ${p.shadows}` : "") + (p.highlight_compression ? ` · highlights ${p.highlight_compression}` : "");
     if (g === "geometry") return p.rotate_deg ? `${Number(p.rotate_deg) > 0 ? "+" : ""}${Number(p.rotate_deg).toFixed(2)}°` : "level";
     if (g === "color") return p.vibrance ? `vibrance +${p.vibrance}` : "as shot";
     if (g === "detail") return p.nr_chroma ? `noise ${p.nr_luma}/${p.nr_chroma}` : "no noise reduction";
     return "";
+  }
+
+  function value(e: Edit, g: string): string {
+    return formatParams(g, e.params[g] ?? {});
+  }
+
+  function suggestedFor(e: Edit, g: string): Record<string, unknown> | null {
+    const proposal = e.proposals.find((p) => groupOf(p) === g && p.band !== "abstained");
+    const proposed = proposal?.params[g];
+    if (!proposed || !Object.keys(proposed).length) return null;
+    const cur = e.params[g] ?? {};
+    const differs = Object.entries(proposed).some(([k, v]) => {
+      const c = cur[k];
+      if (typeof v === "number") return Math.abs(v - Number(c ?? 0)) > 1e-4;
+      return c !== v;
+    });
+    return differs ? proposed : null;
+  }
+
+  const acceptTarget = $derived.by(() => {
+    if (!current) return null;
+    const direct = suggestedFor(current, group);
+    if (direct) return { group, params: direct };
+    for (const p of current.proposals) {
+      const g = groupOf(p);
+      const s = suggestedFor(current, g);
+      if (s) return { group: g, params: s };
+    }
+    return null;
+  });
+
+  function pickDefaultGroup(e: Edit | null) {
+    if (!e) return;
+    const unapplied = e.proposals.find((p) => suggestedFor(e, groupOf(p)) !== null);
+    if (unapplied) {
+      group = groupOf(unapplied);
+      return;
+    }
+    const flagged = e.proposals.find((p) => p.band !== "abstained" && p.flags.length > 0);
+    if (flagged) group = groupOf(flagged);
   }
 
   function locked(e: Edit, g: string): boolean {
@@ -117,6 +273,8 @@
     flushNow();
     currentId = id;
     showBefore = false;
+    if (zoom) zoomFocus = [0.5, 0.5];
+    pickDefaultGroup(data?.edits.find((e) => e.id === id) ?? null);
   }
 
   function nextNeeding() {
@@ -174,6 +332,16 @@
     } finally {
       busy = false;
     }
+  }
+
+  function acceptProposal() {
+    if (!current || !acceptTarget) return void (message = "Nothing suggested to apply.");
+    const target = acceptTarget;
+    group = target.group;
+    run(() => reviewApi.accept(current!.id, target.group), (e) => {
+      replace(e);
+      message = `${LABELS[target.group]} set to ${formatParams(target.group, target.params)}, locked.`;
+    });
   }
 
   function reset() {
@@ -249,17 +417,29 @@
       "]": () => nudge("ev", 1),
       ",": () => nudge("warmth", -1),
       ".": () => nudge("warmth", 1),
+      "<": () => nudge("warmth", -5),
+      ">": () => nudge("warmth", 5),
       "{": () => nudge("rotate", -1),
       "}": () => nudge("rotate", 1),
+      a: acceptProposal,
+      A: acceptProposal,
       r: reset,
       l: toggleLock,
       s: applyScene,
       e: openRawTherapee,
       g: () => (lab = !!current),
+      z: () => toggleZoom(),
+      Z: () => toggleZoom(),
       " ": markReviewed,
       Tab: () => (filter = filter === "review" ? "all" : "review"),
       "?": () => (help = !help),
-      Escape: () => (help = false),
+      Escape: () => {
+        if (help) help = false;
+        else if (zoom) {
+          zoom = false;
+          zoomFocus = null;
+        }
+      },
     };
     const action = keys[event.key];
     if (action && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -319,7 +499,7 @@
       <button class="primary" onclick={startExport} disabled={busy || !!activeJob || !data.edits.length} title="Write full-size JPEGs into jpg/">
         Export {data.exports.count ? `(${data.exports.count} done)` : ""}
       </button>
-      <button onclick={() => (help = !help)}>?</button>
+      <button onclick={() => (help = !help)} title="Guide and keys (?)">?</button>
     {/if}
   </header>
 
@@ -352,13 +532,30 @@
 
       {#if current}
         <main>
-          <div class="view">
+          <div
+            class="view"
+            class:zoom={!!zoomedSize}
+            class:dragging
+            bind:this={viewEl}
+            bind:clientWidth={viewW}
+            bind:clientHeight={viewH}
+            onpointerdown={onPointerDown}
+            onpointermove={onPointerMove}
+            onpointerup={onPointerUp}
+            onpointercancel={onPointerUp}
+            ondblclick={onDoubleClick}
+            role="presentation"
+          >
             {#if showBefore ? current.has_before : current.has_after}
               <img
                 class="photo"
+                class:zoomed={!!zoomedSize}
+                bind:this={photoEl}
+                onload={onPhotoLoad}
+                draggable={false}
                 src={reviewUrls.preview(current, showBefore ? "before" : "after")}
                 alt={current.name}
-                style={showBefore ? "" : previewStyle}
+                style={photoStyle}
               />
             {:else}
               <p class="muted">No preview yet.</p>
@@ -366,6 +563,9 @@
             <button class="label" onclick={() => (showBefore = !showBefore)} title="Before / after">
               {showBefore ? "as shot" : "edited"}{busy ? " · rendering…" : ""} <kbd>\</kbd>
             </button>
+            {#if zoomedSize}
+              <div class="legend">zoomed · drag or scroll to move around · <kbd>Z</kbd> fit</div>
+            {/if}
           </div>
           <div class="info">
             <div class="title">
@@ -401,12 +601,29 @@
 
         <aside class="actions">
           <h3>{LABELS[group]}</h3>
-          <div class="row"><button onclick={() => nudge("ev", -1)}><kbd>[</kbd> darker</button><button onclick={() => nudge("ev", 1)}><kbd>]</kbd> brighter</button></div>
-          <div class="row"><button onclick={() => nudge("warmth", -1)}><kbd>,</kbd> cooler</button><button onclick={() => nudge("warmth", 1)}><kbd>.</kbd> warmer</button></div>
-          <div class="row"><button onclick={() => nudge("rotate", -1)}><kbd>{"{"}</kbd> turn ↻</button><button onclick={() => nudge("rotate", 1)}><kbd>{"}"}</kbd> turn ↺</button></div>
+          <div class="row">
+            <button onclick={(e) => nudge("ev", e.shiftKey ? -3 : -1)} title="Darker ([; Shift+click: −0.45 EV)"><kbd>[</kbd> darker</button>
+            <button onclick={(e) => nudge("ev", e.shiftKey ? 3 : 1)} title="Brighter (]; Shift+click: +0.45 EV)"><kbd>]</kbd> brighter</button>
+          </div>
+          <div class="row">
+            <button onclick={(e) => nudge("warmth", e.shiftKey ? -5 : -1)} title="Cooler (,; < or Shift+click: 5×)"><kbd>,</kbd> cooler</button>
+            <button onclick={(e) => nudge("warmth", e.shiftKey ? 5 : 1)} title="Warmer (.; > or Shift+click: 5×)"><kbd>.</kbd> warmer</button>
+          </div>
+          <div class="row turn">
+            <button onclick={() => nudge("rotate", -5)} title="Turn 0.5° clockwise">↻ 0.5°</button>
+            <button onclick={(e) => nudge("rotate", e.shiftKey ? -5 : -1)} title={"Turn 0.1° clockwise ({)"}><kbd>{"{"}</kbd> ↻</button>
+            <button onclick={(e) => nudge("rotate", e.shiftKey ? 5 : 1)} title={"Turn 0.1° counter-clockwise (})"}><kbd>{"}"}</kbd> ↺</button>
+            <button onclick={() => nudge("rotate", 5)} title="Turn 0.5° counter-clockwise">↺ 0.5°</button>
+          </div>
+          {#if acceptTarget}
+            <button class="accept" onclick={acceptProposal} title="Apply the agent's full suggested value and lock it">
+              <kbd>A</kbd> apply {LABELS[acceptTarget.group].toLowerCase()} ({formatParams(acceptTarget.group, acceptTarget.params)})
+            </button>
+          {/if}
           <button onclick={reset}><kbd>R</kbd> reset {LABELS[group].toLowerCase()} to as shot</button>
           <button onclick={toggleLock}><kbd>L</kbd> {locked(current, group) ? "unlock" : "lock"} {LABELS[group].toLowerCase()}</button>
           <button onclick={applyScene}><kbd>S</kbd> apply {LABELS[group].toLowerCase()} to the scene</button>
+          <button onclick={() => toggleZoom()}><kbd>Z</kbd> {zoom ? "fit photo" : "zoom in"}</button>
           <button onclick={() => (lab = true)}><kbd>G</kbd> look lab</button>
           <button onclick={openRawTherapee}><kbd>E</kbd> open in RawTherapee</button>
           <button class="primary" onclick={markReviewed}><kbd>Space</kbd> {current.reviewed ? "not seen yet" : "seen, next"}</button>
@@ -417,22 +634,7 @@
   {/if}
 
   {#if help}
-    <div class="help" role="dialog" aria-label="Keys">
-      <h2>Review keys</h2>
-      <table>
-        <tbody>
-          <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>previous / next photo</td><td><kbd>N</kbd></td><td>next photo that needs a look</td></tr>
-          <tr><td><kbd>\</kbd></td><td>before / after</td><td><kbd>Tab</kbd></td><td>needs a look / all</td></tr>
-          <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>exposure −/+ 0.15 EV</td><td><kbd>,</kbd> <kbd>.</kbd></td><td>cooler / warmer (10 mired)</td></tr>
-          <tr><td><kbd>{"{"}</kbd> <kbd>{"}"}</kbd></td><td>turn −/+ 0.1°</td><td><kbd>R</kbd></td><td>reset the chosen chip's group to as shot</td></tr>
-          <tr><td><kbd>L</kbd></td><td>lock / unlock it</td><td><kbd>S</kbd></td><td>apply it to the whole scene</td></tr>
-          <tr><td><kbd>G</kbd></td><td>look lab</td><td><kbd>E</kbd></td><td>open in RawTherapee</td></tr>
-          <tr><td><kbd>Space</kbd></td><td>seen, go to the next</td><td><kbd>?</kbd></td><td>this help</td></tr>
-        </tbody>
-      </table>
-      <p class="muted">Click a chip to choose what R, L and S act on. Every change you make is locked, so the next edit run keeps it. The preview changes at once roughly, and the real render replaces it a moment later.</p>
-      <button onclick={() => (help = false)}>Close</button>
-    </div>
+    <ReviewHelp onclose={() => (help = false)} />
   {/if}
 
   {#if lab && current && data}
@@ -450,29 +652,33 @@
 </div>
 
 <style>
-  .page { height: 100%; display: flex; flex-direction: column; }
-  header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .page { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+  header { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   header h1 { font-size: 16px; margin: 0; }
   .home { color: var(--text); text-decoration: none; font-weight: 600; }
   .sep { color: var(--muted); }
   .folder { color: var(--muted); margin-right: 8px; }
   .grow { flex: 1; }
   button.on { border-color: var(--accent); background: rgba(106, 162, 255, 0.15); }
-  .job { padding: 4px 12px; background: var(--panel); color: var(--muted); }
-  .error { padding: 6px 12px; color: var(--reject); }
+  .job { flex: none; padding: 4px 12px; background: var(--panel); color: var(--muted); }
+  .error { flex: none; padding: 6px 12px; color: var(--reject); }
   .empty { padding: 40px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 180px 1fr 240px; }
-  .strip { overflow-y: auto; border-right: 1px solid var(--line); padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+  .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 180px 1fr 240px; grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+  .strip { min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); padding: 6px; display: flex; flex-direction: column; gap: 6px; }
   .tile { display: flex; flex-direction: column; gap: 3px; padding: 4px; text-align: left; }
   .tile img { width: 100%; height: auto; border-radius: 3px; }
   .tile.current { border-color: var(--accent); }
   .tile .name { font-size: 12px; }
-  main { min-width: 0; display: flex; flex-direction: column; }
-  .view { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
-  .photo { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .label { position: absolute; left: 10px; top: 8px; background: rgba(0, 0, 0, 0.6); padding: 2px 8px; border-radius: 4px; }
+  main { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .view { flex: 1 1 0%; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+  .view.zoom { display: block; cursor: grab; }
+  .view.zoom.dragging { cursor: grabbing; }
+  .photo { max-width: 100%; max-height: 100%; width: auto; height: auto; min-width: 0; min-height: 0; object-fit: contain; display: block; user-select: none; }
+  .photo.zoomed { position: absolute; left: 0; top: 0; max-width: none; max-height: none; }
+  .label { position: absolute; left: 10px; top: 8px; z-index: 2; background: rgba(0, 0, 0, 0.6); padding: 2px 8px; border-radius: 4px; }
+  .legend { position: absolute; bottom: 10px; left: 10px; z-index: 2; background: #000b; padding: 4px 8px; border-radius: 4px; font-size: 12px; display: flex; gap: 4px; align-items: center; }
   .primary kbd { background: transparent; color: inherit; border-color: rgba(0, 0, 0, 0.35); }
-  .info { padding: 8px 12px; border-top: 1px solid var(--line); max-height: 40%; overflow-y: auto; }
+  .info { flex: 0 1 auto; padding: 8px 12px; border-top: 1px solid var(--line); max-height: 38%; overflow-y: auto; }
   .title { display: flex; gap: 12px; align-items: baseline; margin-bottom: 6px; }
   .chips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
   .chip { width: 100%; text-align: left; border-left-width: 4px; }
@@ -483,15 +689,16 @@
   .chip.band-locked { border-left-color: var(--accent); }
   .chip .why { display: block; color: var(--muted); font-size: 12px; }
   .reasons { margin: 6px 0 0; padding-left: 18px; color: var(--warn); }
-  .actions { border-left: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .actions { min-height: 0; border-left: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
   .actions h3 { margin: 0 0 4px; font-size: 14px; }
   .actions .row { display: flex; gap: 6px; }
   .actions .row button { flex: 1; }
+  .actions .row.turn { gap: 4px; }
+  .actions .row.turn button { padding: 5px 4px; font-size: 12px; }
+  .actions .accept { border-color: var(--accent); }
   .message { color: var(--muted); font-size: 12px; }
-  .help { position: fixed; inset: 10% 15%; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; z-index: 20; overflow: auto; }
-  .help td { padding: 3px 10px 3px 0; }
   .badge.warn { background: var(--warn); color: #201800; }
   .badge.keep { background: var(--keep); color: #04170b; }
   button.link { background: none; border: none; color: var(--accent); padding: 0; }
-  @media (max-width: 900px) { .body { grid-template-columns: 1fr; } .strip { flex-direction: row; overflow-x: auto; max-height: 140px; } .tile { width: 120px; } }
+  @media (max-width: 900px) { .body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) auto; } .strip { flex-direction: row; overflow-x: auto; max-height: 140px; } .tile { width: 120px; } }
 </style>

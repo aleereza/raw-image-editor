@@ -1,6 +1,6 @@
 # ADR 0017: Learned estimators: C5 for white balance, GeoCalib for straightening
 
-- **Status:** accepted: `wb@3` (C5) and `geometry@3` (GeoCalib) replace `wb@1` and `geometry@2`. Every threshold stays provisional until the golden set exists (plan §9).
+- **Status:** accepted: `wb@3` (C5) and `geometry@3` (GeoCalib) replace `wb@1` and `geometry@2`; `geometry@4` loosens GeoCalib's line-confirmation uncertainty to `3.0°` (ADR 0020). Every threshold stays provisional until the golden set exists (plan §9).
 - **Date:** 2026-11-25 (Phase 2)
 - **Code:** `src/rie/agents/c5.py`, `src/rie/agents/gravity.py`, `src/rie/agents/wb.py`, `src/rie/agents/geometry.py`, `src/rie/edit.py`, `src/rie/evaluate.py`, `src/rie/vendor/`, `models/manifest.toml`, `tests/test_agents.py`, `tests/conftest.py`
 

@@ -1,4 +1,4 @@
-"""Geometry agent v3: straightening (plan §4.5, ADR 0017).
+"""Geometry agent v4: straightening (plan §4.5, ADRs 0017 and 0020).
 
 Line segments (OpenCV's LSD) on the as-shot render, which RawTherapee has already corrected for lens distortion,
 feed length-weighted histograms of how far near-horizontal and near-vertical lines lean. Verticals far from the
@@ -12,10 +12,10 @@ on more photos the owner left level than on photos the owner turned (ADR 0016). 
 the agreement test catches.
 
 GeoCalib (`rie.agents.gravity`, plan §4.5 item 3) reads the camera's roll from the whole picture, with an
-uncertainty. Where the lines give no confident roll, GeoCalib's is applied when its uncertainty is at most
+uncertainty. Where the lines give no roll to act on, GeoCalib's is applied when its uncertainty is at most
 GEOCALIB_SURE: the owner judged its turns right, even on photos left level in the past (ADR 0017). Where the lines
-give a cautious roll, GeoCalib agreeing within AGREE_AXES makes it confident. A separate horizon detector (item 2)
-is not used.
+already give a cautious roll, GeoCalib agreeing within AGREE_AXES confirms it up to GEOCALIB_CONFIRM (ADR 0020). A
+separate horizon detector (item 2) is not used.
 
 Policy: a roll under MIN_ROLL is left alone; up to MAX_ROLL it is corrected; above that it is probably deliberate
 and only flagged. RawTherapee's AutoFill enlarges the turned picture to hide the corners (ADR 0001), so no crop is
@@ -35,7 +35,7 @@ from . import gravity
 from .context import Face, ImageContext
 from .proposal import APPLY, Proposal
 
-VERSION = "geometry@3"
+VERSION = "geometry@4"
 MIN_ROLL, MAX_ROLL = 0.2, 8.0  # degrees (plan §4.5)
 WINDOW = 10.0  # degrees around horizontal and vertical that count as lines to straighten by
 BANDWIDTH = 0.15  # degrees, kernel of the lean histogram
@@ -47,7 +47,8 @@ AGREE_AXES = 0.5  # degrees within which horizontals and verticals agree
 ACT_ON = ("both", "horizontals")  # the line evidence the agent turns a photo on
 SINGLE_FACTOR = 0.7  # confidence factor for horizontals alone (both kinds agreeing: 0.95)
 FACE_DOMINANT = 0.06  # a trusted face larger than this share of the frame makes the photo a portrait
-GEOCALIB_SURE = 1.0  # degrees of roll uncertainty up to which GeoCalib's roll is acted on (ADR 0017)
+GEOCALIB_SURE = 1.0  # degrees of roll uncertainty up to which GeoCalib's roll is acted on alone (ADR 0017)
+GEOCALIB_CONFIRM = 3.0  # degrees of uncertainty up to which GeoCalib confirms agreeing lines (ADR 0020)
 GEOCALIB_CONFIDENCE = 0.9  # confidence of a roll from GeoCalib alone, or of a cautious roll GeoCalib confirms
 PORTRAIT_FACTOR = 0.6  # a portrait's tilt is often deliberate
 WORK_EDGE = 1280
@@ -186,7 +187,7 @@ def propose(ctx: ImageContext) -> Proposal:
             reading = gravity_estimate(ctx)
             if reading is not None:
                 evidence["gravity"] = reading.to_json()
-                if reading.uncertainty <= GEOCALIB_SURE and abs(reading.turn - roll) <= AGREE_AXES:
+                if reading.uncertainty <= GEOCALIB_CONFIRM and abs(reading.turn - roll) <= AGREE_AXES:
                     confidence = max(confidence, GEOCALIB_CONFIDENCE * portrait)
                     basis = "to level the lines, as GeoCalib reads it too"
     else:

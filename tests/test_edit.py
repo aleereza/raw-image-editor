@@ -147,7 +147,11 @@ def test_eval_compares_a_sidecar_white_balance_and_reads_the_folder_only(tmp_pat
     assert row["folder"] == 0 and row["scene"] is not None  # folders by number; scenes from the metadata
     for key in ("estimate_error", "applied_neutral_error", "applied_error", "camera_error"):
         assert row[key] >= 0
-    assert data["agents"] == {"wb": evaluate.wb.VERSION, "geometry": "geometry@3", "harmonize": "harmonize@1"}
+    assert data["agents"] == {
+        "wb": evaluate.wb.VERSION,
+        "geometry": evaluate.geometry.VERSION,
+        "harmonize": "harmonize@1",
+    }
 
 
 def _ref(folder: str, name: str, turn: float) -> evaluate.Reference:

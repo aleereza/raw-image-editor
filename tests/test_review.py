@@ -104,6 +104,36 @@ def test_reset_and_lock(conn, folder):
         review.nudge(conn, image, "saturation", 1)
 
 
+def test_apply_proposal_sets_the_agents_full_value_and_locks_it(conn, folder):
+    image = _photo(conn, folder, "DSC_0001.NEF")
+    run_id = int(
+        conn.execute(
+            "INSERT INTO edit_runs (folder_id, look, started_at) VALUES (?, 'neutral@1', ?)", (folder, catalog.now())
+        ).lastrowid
+        or 0
+    )
+    conn.execute("UPDATE edits SET run_id = ? WHERE image_id = ?", (run_id, image))
+    conn.execute(
+        "INSERT INTO proposals (image_id, run_id, agent, params, as_shot, applied, confidence, band, rationale, "
+        "created_at) VALUES (?, ?, 'geometry@4', ?, ?, '{}', 0.44, 'as_shot', 'level the lines', ?)",
+        (image, run_id, '{"geometry": {"rotate_deg": -3.65}}', '{"geometry": {"rotate_deg": 0.0}}', catalog.now()),
+    )
+    review.apply_proposal(conn, image, "geometry")
+    _, recipe = review.load_recipe(conn, image)
+    assert recipe["params"]["geometry"] == {"rotate_deg": -3.65}
+    assert recipe["provenance"]["geometry.rotate_deg"] == {
+        "source": review.SOURCE_OWNER,
+        "locked": True,
+        "action": "accept",
+    }
+    row = conn.execute(
+        "SELECT param, owner_value, action FROM overrides WHERE param = 'geometry.rotate_deg'"
+    ).fetchone()
+    assert tuple(row) == ("geometry.rotate_deg", "-3.65", "accept")
+    with pytest.raises(review.ReviewError):
+        review.apply_proposal(conn, image, "color")
+
+
 def test_apply_to_scene_gives_the_values_to_the_scenes_other_photos(conn, folder):
     scene = int(
         conn.execute("INSERT INTO groups (folder_id, kind, position) VALUES (?, 'scene', 0)", (folder,)).lastrowid or 0

@@ -28,6 +28,13 @@ from .scan.folder import folder_path
 
 SOURCE_OWNER = "human:review"
 GROUPS = ("geometry", "white_balance", "exposure", "color", "tone", "detail")
+AGENT_GROUP = {
+    "geometry": "geometry",
+    "wb": "white_balance",
+    "exposure": "exposure",
+    "color": "color",
+    "baseline": "detail",
+}
 NUDGES = {
     "ev": ("exposure", "ev", 0.15),
     "warmth": ("white_balance", "temperature_k", 10.0),  # mired per step; positive is warmer
@@ -285,6 +292,32 @@ def nudge(conn: sqlite3.Connection, image_id: int, kind: str, steps: int) -> int
         value = round(float(current.get(name, 0.0)) + step * steps, 3)
         values = {group: {name: value}}
     return change(conn, image_id, values, "nudge")
+
+
+def apply_proposal(conn: sqlite3.Connection, image_id: int, group: str) -> int:
+    """Apply the latest edit run's full proposed values for one group and lock them."""
+    if group not in GROUPS:
+        raise ReviewError(f"unknown parameter group {group!r}")
+    edit = conn.execute("SELECT run_id FROM edits WHERE image_id = ?", (image_id,)).fetchone()
+    if edit is not None and edit["run_id"] is not None:
+        rows = conn.execute(
+            "SELECT agent, params FROM proposals WHERE image_id = ? AND run_id = ? ORDER BY id DESC",
+            (image_id, edit["run_id"]),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT agent, params FROM proposals WHERE image_id = ? ORDER BY run_id DESC, id DESC",
+            (image_id,),
+        ).fetchall()
+    for row in rows:
+        if AGENT_GROUP.get(str(row["agent"]).split("@", 1)[0]) != group:
+            continue
+        params = catalog.loads(row["params"], {}) or {}
+        proposed = params.get(group)
+        if not isinstance(proposed, dict) or not proposed:
+            raise ReviewError(f"no suggested values for {group!r}")
+        return change(conn, image_id, {group: dict(proposed)}, "accept")
+    raise ReviewError(f"no proposal for {group!r}")
 
 
 def reset(conn: sqlite3.Connection, image_id: int, group: str) -> int:

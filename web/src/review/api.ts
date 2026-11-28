@@ -104,6 +104,7 @@ export const reviewApi = {
   exportFolder: (folder: number) => request<Job>("POST", `/api/folders/${folder}/export`),
   nudge: (id: number, kind: string, steps: number) => request<Edit>("POST", `/api/photos/${id}/nudge`, { kind, steps }),
   reset: (id: number, group: string) => request<Edit>("POST", `/api/photos/${id}/reset`, { group }),
+  accept: (id: number, group: string) => request<Edit>("POST", `/api/photos/${id}/accept`, { group }),
   lock: (id: number, key: string, locked: boolean) => request<Edit>("POST", `/api/photos/${id}/lock`, { key, locked }),
   reviewed: (id: number, reviewed: boolean) => request<Edit>("POST", `/api/photos/${id}/reviewed`, { reviewed }),
   scene: (id: number, groups: string[]) =>

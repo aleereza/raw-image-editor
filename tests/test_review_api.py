@@ -84,6 +84,27 @@ def test_review_actions(env):
     assert client.get(f"/api/folders/{folder}/edits").json()["no_override_share"] == 0.5
 
 
+def test_accept_proposal_route(env):
+    _cfg, conn, client, _folder, images = env
+    run_id = int(
+        conn.execute(
+            "INSERT INTO edit_runs (folder_id, look, started_at) VALUES (?, 'neutral@1', ?)", (env[3], catalog.now())
+        ).lastrowid
+        or 0
+    )
+    conn.execute("UPDATE edits SET run_id = ? WHERE image_id = ?", (run_id, images[0]))
+    conn.execute(
+        "INSERT INTO proposals (image_id, run_id, agent, params, as_shot, applied, confidence, band, rationale, "
+        "created_at) VALUES (?, ?, 'geometry@4', ?, ?, '{}', 0.44, 'as_shot', 'level the lines', ?)",
+        (images[0], run_id, '{"geometry": {"rotate_deg": -3.65}}', '{"geometry": {"rotate_deg": 0.0}}', catalog.now()),
+    )
+    conn.commit()
+    accepted = client.post(f"/api/photos/{images[0]}/accept", json={"group": "geometry"}).json()
+    assert accepted["params"]["geometry"]["rotate_deg"] == pytest.approx(-3.65)
+    assert accepted["provenance"]["geometry.rotate_deg"]["locked"] is True
+    assert client.post(f"/api/photos/{images[0]}/accept", json={"group": "color"}).status_code == 400
+
+
 def test_looks_are_saved_in_versions(env):
     _cfg, _conn, client, _folder, images = env
     look = client.get(f"/api/folders/{env[3]}/edits").json()["looks"][0]
