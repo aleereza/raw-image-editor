@@ -9,7 +9,7 @@ least two frames, except faces far smaller than the burst's main faces (stranger
   half-closed eyes (ADR 0003); a single frame only counts eyes as closed when the score is very high;
 - people combine through a soft minimum, so one blink spoils a group shot; a person missing from a frame counts
   as half;
-- smiles add a small bonus, and blur, motion and clipped highlights cost points.
+- smiles add a small bonus, and blur, motion, clipped highlights and a dark frame (ADR 0018) cost points.
 
 Frames without people score on the subject's sharpness relative to the burst's sharpest frame. Every weight here
 is a first guess (plan §9: no threshold without a golden-set number); the personal model learns the owner's own
@@ -23,7 +23,7 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any
 
-VERSION = "burst@2"
+VERSION = "burst@3"
 CLOSED_ABSOLUTE = 0.75  # blink score that counts as closed eyes in a frame with nothing to compare against
 CLOSED_RELATIVE = 0.3  # how much worse than the person's best frame, with at least CLOSED_FLOOR, means closed
 CLOSED_FLOOR = 0.5
@@ -33,6 +33,7 @@ MISSING_FACE = 0.5
 TRACK_REACH = 1.0  # a face continues a track when its centre lies within this many face sizes of the track's last box
 TRACK_SIZE = 2.0  # ... and neither box is more than twice as wide or as high as the other
 BACKGROUND = 0.25  # a face narrower than this share of the burst's widest person's face is in the background
+DARK_FACTOR = {"very dark": 0.3, "dark": 0.7}  # what a dark frame keeps of its technical score
 
 
 @dataclass
@@ -43,6 +44,7 @@ class FrameInput:
     verdict: str = "unknown"
     clip_high: float = 0.0
     clip_low: float = 0.0
+    exposure: str | None = None  # "very dark", "dark" or None (rie.analysis.exposure)
 
 
 @dataclass
@@ -197,6 +199,7 @@ def rank_burst(frames: list[FrameInput]) -> list[FrameRank]:
             technical *= 0.6
         if frame.clip_high > 0.03:
             technical *= 0.9
+        technical *= DARK_FACTOR.get(frame.exposure or "", 1.0)
         score = technical * _softmin(people) if people_tracks else technical
         if out.smile is not None:
             score += 0.1 * out.smile
@@ -218,6 +221,8 @@ def rank_burst(frames: list[FrameInput]) -> list[FrameRank]:
             issues.append(f"{total_people - r.people} of {total_people} faces hidden")
         if r.sharp_rel is not None and r.sharp_rel < 0.8:
             issues.append(f"{round(r.sharp_rel * 100)}% as sharp as the sharpest frame")
+        if frames[r.position - 1].exposure:
+            issues.append(str(frames[r.position - 1].exposure))
         if frames[r.position - 1].verdict in ("motion", "shake"):
             issues.append(
                 frames[r.position - 1].verdict.replace("shake", "camera shake").replace("motion", "motion blur")

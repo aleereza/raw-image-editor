@@ -111,6 +111,7 @@ def test_decisions_done_and_restore(env):
     _cfg, _conn, client, shoot, _top = env
     assert client.post("/api/photos/2/decision", json={"decision": "reject", "reason": "blur"}).json() == {"ok": True}
     assert client.post("/api/photos/2/decision", json={"decision": "maybe"}).status_code == 409
+    assert client.post("/api/photos/2/reason", json={"reason": "exposure"}).json() == {"ok": True}
     assert client.post("/api/photos/1/rating", json={"rating": 4}).status_code in (404, 405)  # no ratings
     (shoot / "DSC_0001.NEF.pp3").write_text("[General]\nRank=0\n")  # RawTherapee's sidecar for the photo
     preview = client.get("/api/folders/1/done").json()

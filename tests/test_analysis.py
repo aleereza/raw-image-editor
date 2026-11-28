@@ -179,6 +179,18 @@ def person(box, blink=0.05, smile=0.5, yaw=0.0, blur=0.3):
     return {"box": box, "blink_l": blink, "blink_r": blink, "smile": smile, "yaw": yaw, "pitch": 0.0, "sharpness": blur}
 
 
+def test_a_very_dark_frame_loses_the_burst():
+    box = [0.4, 0.3, 0.1, 0.15]
+    ranks = burst.rank_burst(
+        [
+            burst.FrameInput(1, [person(box, blur=0.3)], 0.3, "sharp", exposure="very dark"),  # the flash missed
+            burst.FrameInput(2, [person(box, blur=0.6)], 0.6, "sharp"),
+        ]
+    )
+    assert [r.rank for r in ranks] == [2, 1]
+    assert ranks[0].reason == "#2 is better: very dark"
+
+
 def test_a_relative_blink_loses_the_burst():
     a, b = [0.1, 0.1, 0.1, 0.1], [0.6, 0.1, 0.1, 0.1]
     frames = [

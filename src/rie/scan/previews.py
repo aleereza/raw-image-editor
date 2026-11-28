@@ -134,18 +134,34 @@ class PreviewResult:
     error: str | None = None
 
 
+_LUMINANCE = np.array([0.2126, 0.7152, 0.0722], np.float32)
+
+
+def _srgb_to_linear(values: np.ndarray) -> np.ndarray:
+    return np.where(values <= 0.04045, values / 12.92, ((values + 0.055) / 1.055) ** 2.4)
+
+
+def _linear_to_srgb(values: np.ndarray) -> np.ndarray:
+    values = np.clip(values, 0.0, 1.0)
+    return np.where(values <= 0.0031308, values * 12.92, 1.055 * values ** (1 / 2.4) - 0.055)
+
+
 def look_features(thumb: pyvips.Image) -> dict[str, Any]:
     """Cheap descriptors of the frame for grouping and exposure checks, from the upright grid thumbnail.
 
     - `layout`: an 8 x 8 grid of CIELAB means (L/100, a/128, b/128), flattened: what the frame looks like.
     - `dhash`: a 64-bit difference hash of a 9 x 8 grey thumbnail, for near-duplicates.
     - `luma`: mean luminance (0-1); `clip_high` / `clip_low`: shares of pixels at the ends of the range.
+    - `lum_p01` / `lum_p50` / `lum_p99`: the darkest 1 %, the median and the brightest 1 % of the frame's luminance,
+      computed in linear light and encoded as sRGB (0-1), for the exposure checks (ADR 0018).
     """
     rgb = thumb.colourspace("srgb") if thumb.interpretation != "srgb" else thumb
     if rgb.bands > 3:
         rgb = rgb.extract_band(0, n=3)
     pixels = np.ndarray(buffer=rgb.write_to_memory(), dtype=np.uint8, shape=(rgb.height, rgb.width, rgb.bands))
-    grey = pixels.astype(np.float32) @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    grey = pixels.astype(np.float32) @ _LUMINANCE
+    luminance = _linear_to_srgb(_srgb_to_linear(pixels.astype(np.float32) / 255.0) @ _LUMINANCE)
+    p01, p50, p99 = (float(v) for v in np.quantile(luminance, (0.01, 0.5, 0.99)))
     lab = rgb.colourspace("lab").resize(8 / rgb.width, vscale=8 / rgb.height, kernel="linear")
     lab_values = np.ndarray(buffer=lab.write_to_memory(), dtype=np.float32, shape=(lab.height, lab.width, 3))
     layout = (lab_values[:8, :8] / np.array([100.0, 128.0, 128.0], np.float32)).round(3).flatten().tolist()
@@ -160,7 +176,22 @@ def look_features(thumb: pyvips.Image) -> dict[str, Any]:
         "luma": round(float(grey.mean()) / 255.0, 4),
         "clip_high": round(float((pixels.max(axis=2) >= 250).mean()), 5),
         "clip_low": round(float((pixels.max(axis=2) <= 5).mean()), 5),
+        "lum_p01": round(p01, 4),
+        "lum_p50": round(p50, 4),
+        "lum_p99": round(p99, 4),
     }
+
+
+def cached_look(cfg: Config, quick_hash: str) -> dict[str, Any] | None:
+    """The look measured again on the cached grid thumbnail, without reading the photo; None when it is missing."""
+    path = thumb_path(cfg, quick_hash)
+    if not path.is_file():
+        return None
+    try:
+        # Random access, as in make_previews: libvips caches loads by file name.
+        return look_features(pyvips.Image.new_from_file(str(path)))
+    except pyvips.Error:
+        return None
 
 
 def make_previews(

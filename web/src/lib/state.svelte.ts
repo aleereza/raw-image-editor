@@ -11,7 +11,7 @@ export const FILTERS: { id: Filter; label: string; title: string }[] = [
   { id: "app_keep", label: "Kept by the app", title: "What the app keeps on its own (its Auto-keep pile)" },
 ];
 
-export const REASONS = ["blur", "eyes", "expression", "duplicate", "composition"] as const;
+export const REASONS = ["blur", "eyes", "expression", "duplicate", "composition", "exposure"] as const;
 
 // Everything the culling page can do; the keys and the action panel both call these.
 export interface CullActions {

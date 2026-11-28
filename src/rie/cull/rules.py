@@ -1,18 +1,19 @@
-"""The rule-based sort (`rules@2`): a suggestion, kind, confidence and reason per photo, from the local checks.
+"""The rule-based sort (`rules@3`): a suggestion, kind, confidence and reason per photo, from the local checks.
 
 In order of precedence:
 
-1. Technical failures: an almost black or mostly blown frame, a clearly soft, shaken or motion-blurred subject, or
-   a clearly missed focus.
-2. A near-duplicate of a better frame of its burst (duplicates).
-3. Closed eyes where another frame of the burst has fewer (eyes).
-4. Any other frame of a burst that is not its best (expression and moment).
-5. A face cut by the frame edge (composition), as a suggestion only.
-6. Everything else is a keep: the best frame of a burst (expression) or a good single shot (technical).
+1. Technical failures: an almost black, mostly blown or very dark frame, a clearly soft, shaken or motion-blurred
+   subject, or a clearly missed focus.
+2. A dark frame that an edit may or may not rescue (technical, as a suggestion only).
+3. A near-duplicate of a better frame of its burst (duplicates).
+4. Closed eyes where another frame of the burst has fewer (eyes).
+5. Any other frame of a burst that is not its best (expression and moment).
+6. A face cut by the frame edge (composition), as a suggestion only.
+7. Everything else is a keep: the best frame of a burst (expression) or a good single shot (technical).
 
 The thresholds come from ADR 0008 and are provisional; the personal model learns the owner's own weighting.
 `rules@2` is `rules@1` without its first rule, which kept photos rated in RawTherapee: the app ignores ratings
-(ADR 0010).
+(ADR 0010). `rules@3` adds the very dark and dark frames (ADR 0018).
 """
 
 from __future__ import annotations
@@ -21,9 +22,9 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..analysis import focus
+from ..analysis import exposure, focus
 
-MODEL = "rules@2"
+MODEL = "rules@3"
 
 
 @dataclass
@@ -71,6 +72,9 @@ def features(meta: dict, focus_result: dict, burst: dict, look: dict, faces: lis
         "luma": _num(look.get("luma")),
         "clip_high": _num(look.get("clip_high")),
         "clip_low": _num(look.get("clip_low")),
+        "lum_p01": _num(look.get("lum_p01")),
+        "lum_p50": _num(look.get("lum_p50")),
+        "lum_p99": _num(look.get("lum_p99")),
         "iso": _num(meta.get("iso")),
         "exposure_time": _num(meta.get("exposure_time")),
         "focal_length": _num(meta.get("focal_length")),
@@ -103,6 +107,9 @@ def suggest(
         return Suggestion("reject", "technical", 0.95, "almost black frame", f)
     if clip_high is not None and clip_high > 0.6:
         return Suggestion("reject", "technical", 0.9, "mostly blown out", f)
+    dark = exposure.look_verdict(look)
+    if dark == "very dark":  # before focus: a frame this dark has too little signal to judge its focus by
+        return Suggestion("reject", "technical", 0.9, exposure.reason(look) or dark, f)
     if blur is not None and verdict in ("soft", "motion", "shake") and blur >= focus.SOFT:
         return Suggestion("reject", "technical", 0.85, focus_result.get("reason") or verdict, f)
     if (
@@ -115,6 +122,8 @@ def suggest(
         return Suggestion("reject", "technical", 0.85, focus_result.get("reason") or "focus missed", f)
     if extra.get("rt_trash"):
         return Suggestion("reject", "technical", 0.5, "in RawTherapee's trash", f)
+    if dark == "dark":  # an edit may rescue it: the owner's call (a probability of 0.7 stays out of auto-reject)
+        return Suggestion("reject", "technical", 0.4, exposure.reason(look) or dark, f)
 
     size = int(burst.get("size") or 1)
     rank = int(burst.get("rank") or 1)

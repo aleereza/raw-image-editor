@@ -15,7 +15,7 @@ import numpy as np
 from .. import catalog
 from ..scan.exif import timestamp
 from . import burst as burst_mod
-from . import grouping
+from . import exposure, grouping
 
 VERSION = f"{grouping.VERSION}+{burst_mod.VERSION}"
 
@@ -95,6 +95,7 @@ def _inputs(conn: sqlite3.Connection, ids: list[int]) -> dict[int, burst_mod.Fra
             verdict=f.get("verdict", "unknown"),
             clip_high=float(look.get("clip_high", 0.0)),
             clip_low=float(look.get("clip_low", 0.0)),
+            exposure=exposure.look_verdict(look),
         )
     return out
 
