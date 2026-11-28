@@ -29,6 +29,8 @@ FEATURES = (
     "shake",
     "motion",
     "handheld_ratio",
+    "af_blur",
+    "af_gap",
     "faces",
     "faces_cut",
     "face_size",

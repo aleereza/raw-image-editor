@@ -1,10 +1,11 @@
-"""The rule-based sort (`rules@3`): a suggestion, kind, confidence and reason per photo, from the local checks.
+"""The rule-based sort (`rules@4`): a suggestion, kind, confidence and reason per photo, from the local checks.
 
 In order of precedence:
 
 1. Technical failures: an almost black, mostly blown or very dark frame, a clearly soft, shaken or motion-blurred
    subject, or a clearly missed focus.
-2. A dark frame that an edit may or may not rescue (technical, as a suggestion only).
+2. A missed focus on faces far from a sharp AF point, which may be on purpose, and a dark frame that an edit may or
+   may not rescue (technical, as suggestions only).
 3. A near-duplicate of a better frame of its burst (duplicates).
 4. Closed eyes where another frame of the burst has fewer (eyes).
 5. Any other frame of a burst that is not its best (expression and moment).
@@ -13,7 +14,8 @@ In order of precedence:
 
 The thresholds come from ADR 0008 and are provisional; the personal model learns the owner's own weighting.
 `rules@2` is `rules@1` without its first rule, which kept photos rated in RawTherapee: the app ignores ratings
-(ADR 0010). `rules@3` adds the very dark and dark frames (ADR 0018).
+(ADR 0010). `rules@3` adds the very dark and dark frames (ADR 0018). `rules@4` leaves a missed focus to the owner
+when the AF point itself is sharp and no face lies near it (ADR 0019).
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from typing import Any
 
 from ..analysis import exposure, focus
 
-MODEL = "rules@3"
+MODEL = "rules@4"
 
 
 @dataclass
@@ -57,6 +59,8 @@ def features(meta: dict, focus_result: dict, burst: dict, look: dict, faces: lis
         "shake": _num(focus_result.get("shake")),
         "motion": _num(focus_result.get("motion")),
         "handheld_ratio": _num(focus_result.get("handheld_ratio")),
+        "af_blur": _num(focus_result.get("af_blur")),
+        "af_gap": _num(focus_result.get("af_gap")),
         "faces": float(len(faces)),
         "faces_cut": float(sum(bool(f.get("cut_off")) for f in faces)),
         "face_size": max(sizes) if sizes else math.nan,
@@ -119,6 +123,9 @@ def suggest(
         and background is not None
         and background <= focus.SHARP
     ):
+        unclear = focus.unclear_miss(focus_result)
+        if unclear:  # perhaps on purpose: the owner's call (a probability of 0.7 stays out of auto-reject)
+            return Suggestion("reject", "technical", 0.4, unclear, f)
         return Suggestion("reject", "technical", 0.85, focus_result.get("reason") or "focus missed", f)
     if extra.get("rt_trash"):
         return Suggestion("reject", "technical", 0.5, "in RawTherapee's trash", f)

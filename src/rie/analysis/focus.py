@@ -11,6 +11,12 @@ manual focus, such as the Tokina macro). Its blur, from the raw sharpness map, g
 - `shake`: most of the frame shows blur in one direction;
 - `soft`: anything else that is not sharp; `unknown` when nothing in the subject region has enough detail.
 
+A face away from the AF point usually is the subject: focusing with one point and then reframing moves the face away
+from it. But when the camera focused on an object with a small face far behind it, the soft eyes are no clear miss.
+When a folder is sorted, the AF point is therefore also measured on its own, from the blur map the catalog keeps
+(`af_measures`). A missed focus is unclear when the AF point is sharp and no face lies near it (`unclear_miss`,
+ADR 0019).
+
 The thresholds are provisional: they were set on the Phase 0 samples, not on the golden set, which the owner has
 not shot yet (plan §9's rule). `eval` fitting replaces them. Burst ranking compares frames with each other, which
 matters more than these absolute values.
@@ -32,6 +38,7 @@ MISSED_RATIO = 0.6  # background blur below this share of the subject's blur mea
 DIRECTIONAL = 1.7  # anisotropy above which a tile's blur counts as directional
 SHAKE_SHARE = 0.55  # share of textured tiles blurred in one shared direction that means camera shake
 HANDHELD_FACTOR = 1.5  # handheld limit: 1 / (1.5 x focal length) seconds, no VR (plan §4.3)
+AWAY = 4.0  # face sizes from the AF point beyond which a face is not where the camera focused; provisional (ADR 0019)
 
 # D7100 51-point AF layout in the landscape sensor frame (normalized). Nikon says the points cover the 1.3x crop
 # frame (the central 80 %); columns 1-11 and rows A-E are spread evenly over it. Estimated, not measured.
@@ -97,6 +104,43 @@ def _mask(shape: tuple[int, int], boxes: list[list[float]]) -> np.ndarray:
     return mask
 
 
+def af_blur(blur: np.ndarray, af: list[float]) -> float | None:
+    """The AF point's own blur: the sharper part of the tiles under its box."""
+    return best_blur(region(blur, tuple(af)), 0.3)  # type: ignore[arg-type]
+
+
+def af_gap(af: list[float], box: list[float]) -> float:
+    """How far the AF point's centre lies from a face's centre, in face sizes (each axis divided by the face's extent
+    along it)."""
+    x, y, w, h = box
+    return float(np.hypot((af[0] + af[2] / 2 - x - w / 2) / w, (af[1] + af[3] / 2 - y - h / 2) / h))
+
+
+def af_measures(blur: np.ndarray, af: list[float] | None, boxes: list[list[float]]) -> dict[str, float | None]:
+    """The AF point on its own: its blur, and how far the nearest face box lies from it in face sizes (ADR 0019)."""
+    if af is None:
+        return {"af_blur": None, "af_gap": None}
+    b = af_blur(blur, af)
+    gaps = [af_gap(af, box) for box in boxes if box[2] > 0 and box[3] > 0]
+    return {"af_blur": None if b is None else round(b, 3), "af_gap": round(min(gaps), 2) if gaps else None}
+
+
+def unclear_miss(result: dict[str, Any]) -> str | None:
+    """Why a missed focus on a face is no clear failure, or None when it is one.
+
+    It is unclear when the AF point itself is sharp and no face lies within AWAY face sizes of it: the camera focused
+    on something else, perhaps on purpose, such as an object with someone small behind it (ADR 0019). `result` is a
+    focus result with the AF point's own measures (`af_measures`) added.
+    """
+    if result.get("verdict") != "missed" or result.get("subject") not in ("eyes", "face"):
+        return None
+    blur, gap = result.get("af_blur"), result.get("af_gap")
+    if blur is None or blur > SHARP or gap is None or gap <= AWAY:
+        return None
+    where = "the eyes away from it are" if result["subject"] == "eyes" else "the face away from it is"
+    return f"the AF point is sharp, but {where} soft"
+
+
 def face_blur(sharp: SharpnessMap, face: dict[str, Any]) -> float | None:
     """Blur at the eyes (the sharper eye), or over the face when the eyes have no measurable detail."""
     x, y, w, h = face["box"]
@@ -160,7 +204,7 @@ def inspect(
             subject = "eyes" if any(faces[i].get("eyes") for i in chosen) else "face"
             boxes = [faces[i]["box"] for i in chosen]
     if subject_blur is None and af is not None:
-        subject_blur = best_blur(region(blur, tuple(af)), 0.3)  # type: ignore[arg-type]
+        subject_blur = af_blur(blur, af)
         if subject_blur is not None:
             subject, boxes = "af", [af]
     if subject_blur is None:
