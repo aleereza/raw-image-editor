@@ -21,7 +21,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from starlette.types import Scope
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .. import catalog, locations, safety
 from ..analysis.faces import models_available
@@ -47,6 +48,33 @@ class WebFiles(StaticFiles):
         response = await super().get_response(path, scope)
         response.headers.update(IMMUTABLE if Path(path).parts[:1] == ("assets",) else REVALIDATE)
         return response
+
+
+class NoStoreAPI:
+    """Tells the browser to keep no copy of the API's JSON answers (`Cache-Control: no-store`).
+
+    Without it Chrome stores them, and a tab that comes back through history (restored after the browser restarts, a
+    closed tab reopened, Back) is given the stored copy however old: the folder as it was when the page last loaded
+    it, without the decisions made since. Answers that set their own caching (the images, the event stream) keep it.
+    A plain ASGI middleware, so the event stream's body passes through untouched.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith("/api/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_no_store(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                if "cache-control" not in headers and headers.get("content-type", "").startswith("application/json"):
+                    headers["Cache-Control"] = "no-store"
+            await send(message)
+
+        await self.app(scope, receive, send_no_store)
 
 
 class OpenRequest(BaseModel):
@@ -96,6 +124,7 @@ class FullCache:
 
 def create_app(cfg: Config, *, start_jobs: bool = True) -> FastAPI:
     app = FastAPI(title="Raw Image Editor", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app.add_middleware(NoStoreAPI)
     catalog.connect(cfg.catalog_path).close()  # create or migrate before the first request
     runner = JobRunner(cfg) if start_jobs else None
     full_cache = FullCache()
