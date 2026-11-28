@@ -107,6 +107,20 @@ def test_images_come_from_the_cache_and_the_raw(env):
     assert client.get("/api/photos/99/thumb").status_code == 404
 
 
+def test_the_browser_keeps_no_copy_of_the_api_answers(env):
+    # A tab restored after the browser restarts takes its fetches from the browser's cache: a stored photo list would
+    # show the folder without the decisions made since the page last loaded it.
+    _cfg, _conn, client, _shoot, _top = env
+    answers = [client.get(url) for url in ("/api/status", "/api/folders", "/api/folders/1", "/api/folders/1/photos")]
+    answers += [client.post("/api/photos/1/decision", json={"decision": "keep"}), client.get("/api/folders/99")]
+    assert answers[-1].status_code == 404
+    for answer in answers:
+        assert answer.headers["content-type"] == "application/json"
+        assert answer.headers["cache-control"] == "no-store", answer.url
+    assert "immutable" in client.get("/api/photos/1/thumb?v=x").headers["cache-control"]
+    assert client.get("/api/photos/1/full").headers["cache-control"] == "private, max-age=3600"
+
+
 def test_decisions_done_and_restore(env):
     _cfg, _conn, client, shoot, _top = env
     assert client.post("/api/photos/2/decision", json={"decision": "reject", "reason": "blur"}).json() == {"ok": True}
