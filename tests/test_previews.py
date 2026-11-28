@@ -1,11 +1,13 @@
 import io
+import json
 import shutil
 
 import pytest
+import pyvips
 from PIL import Image
 
 from rie import catalog, config
-from rie.pipeline import open_folder, run_previews
+from rie.pipeline import LOOK_VERSION, open_folder, run_previews
 from rie.scan import previews
 from tests.conftest import make_jpeg, sample_nefs
 
@@ -70,8 +72,25 @@ def test_make_previews_turns_raw_previews_upright(tmp_path, cfg, orientation, up
         assert max(thumb.size) == 128 and (thumb.size[0] > thumb.size[1]) == (upright[0] > upright[1])
     with Image.open(previews.screen_path(cfg, "q1:abcd")) as screen:
         assert max(screen.size) == 512 and (screen.size[0] > screen.size[1]) == (upright[0] > upright[1])
-    assert set(result.look) == {"layout", "dhash", "luma", "clip_high", "clip_low"}
+    assert set(result.look) == {"layout", "dhash", "luma", "clip_high", "clip_low", "lum_p01", "lum_p50", "lum_p99"}
     assert len(result.look["layout"]) == 8 * 8 * 3
+
+
+def test_look_measures_luminance_in_linear_light():
+    grey = previews.look_features(pyvips.Image.new_from_buffer(jpeg_bytes((64, 64), (128, 128, 128)), ""))
+    assert grey["lum_p01"] == pytest.approx(128 / 255, abs=0.01)
+    assert grey["lum_p99"] == pytest.approx(128 / 255, abs=0.01)
+    # A dark frame with a small bright spot: the median stays dark, the brightest 1 % finds the spot.
+    image = Image.new("RGB", (100, 100), (10, 10, 10))
+    image.paste((250, 250, 250), (0, 0, 20, 20))
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    look = previews.look_features(pyvips.Image.new_from_buffer(buffer.getvalue(), ""))
+    assert look["lum_p50"] == pytest.approx(10 / 255, abs=0.005) and look["lum_p99"] > 0.95
+    # Pure green is lighter than pure blue, as in luminance (not the mean of the channels).
+    green = previews.look_features(pyvips.Image.new_from_buffer(jpeg_bytes((32, 32), (0, 255, 0)), ""))
+    blue = previews.look_features(pyvips.Image.new_from_buffer(jpeg_bytes((32, 32), (0, 0, 255)), ""))
+    assert green["lum_p50"] > 0.8 > 0.4 > blue["lum_p50"]
 
 
 def test_make_previews_reports_a_missing_embedded_jpeg(tmp_path, cfg):
@@ -100,6 +119,20 @@ def test_open_folder_makes_previews_once(tmp_path, cfg):
     assert sizes == {"DSC_0001.JPG": "900x600", "DSC_0002.JPG": "600x900"}
     again = run_previews(conn, cfg, result.scan.folder_id)
     assert (again.done, again.skipped) == (0, 2)
+
+
+@needs_exiftool
+def test_an_older_look_is_measured_again_from_the_cache(tmp_path, cfg):
+    shoot = tmp_path / "shoot"
+    make_jpeg(shoot / "DSC_0001.JPG", size=(900, 600), color=(8, 8, 8))
+    conn = catalog.connect(cfg.catalog_path)
+    result = open_folder(conn, cfg, shoot)
+    conn.execute("UPDATE analyses SET version = 'look@1', result = '{\"luma\": 0.03}' WHERE kind = 'look'")
+    (shoot / "DSC_0001.JPG").rename(tmp_path / "away.JPG")  # the photo can't be read: only the cache can be
+    again = run_previews(conn, cfg, result.scan.folder_id)
+    assert (again.done, again.failed, again.skipped) == (1, 0, 0)
+    version, look = conn.execute("SELECT version, result FROM analyses WHERE kind = 'look'").fetchone()
+    assert version == LOOK_VERSION and json.loads(look)["lum_p99"] < 0.1
 
 
 @needs_exiftool

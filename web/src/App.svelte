@@ -415,7 +415,7 @@
     if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     const key = event.key;
-    if (ui.reasonFor !== null && /^[1-5]$/.test(key)) {
+    if (ui.reasonFor !== null && /^[1-9]$/.test(key) && Number(key) <= REASONS.length) {
       event.preventDefault();
       answer(REASONS[Number(key) - 1]);
       return;

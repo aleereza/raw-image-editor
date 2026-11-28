@@ -24,7 +24,7 @@ from .scan.folder import ScanSummary, folder_path, scan_folder
 
 type Progress = Callable[[str, int, int], None]
 
-LOOK_VERSION = "look@1"
+LOOK_VERSION = "look@2"  # look@1 plus the luminance percentiles (ADR 0018)
 
 
 def _nothing(_step: str, _done: int, _total: int) -> None:
@@ -44,32 +44,45 @@ class StepStats:
 def run_previews(
     conn: sqlite3.Connection, cfg: Config, folder_id: int, *, progress: Progress = _nothing, path: Path | None = None
 ) -> StepStats:
-    """Make the cached grid and loupe copies of every photo that lacks them, several at a time."""
+    """Make the cached grid and loupe copies of every photo that lacks them, several at a time.
+
+    A photo whose copies are cached but whose look an older version measured is measured again on its cached grid
+    thumbnail, without reading the photo.
+    """
     start = time.perf_counter()
     stats = StepStats()
     path = path or folder_path(conn, folder_id, cfg)
     rows = conn.execute(
-        "SELECT i.id, i.name, i.kind, i.quick_hash, i.orientation, i.previews, i.width, a.input_hash AS look_hash "
+        "SELECT i.id, i.name, i.kind, i.quick_hash, i.orientation, i.previews, i.width, i.height, "
+        "a.input_hash AS look_hash, a.version AS look_version "
         "FROM images i LEFT JOIN analyses a ON a.image_id = i.id AND a.kind = 'look' "
         "WHERE i.folder_id = ? AND i.state = 'present' ORDER BY i.capture_time, i.shutter_count, i.name",
         (folder_id,),
     ).fetchall()
     todo = []
+    relook: set[int] = set()
     for row in rows:
         cached = (
             previews.thumb_path(cfg, row["quick_hash"]).exists()
             and previews.screen_path(cfg, row["quick_hash"]).exists()
         )
         if cached and row["width"] and row["look_hash"] == row["quick_hash"]:
-            stats.skipped += 1
-        else:
-            todo.append(row)
+            if row["look_version"] == LOOK_VERSION:
+                stats.skipped += 1
+                continue
+            relook.add(row["id"])
+        todo.append(row)
     progress("previews", 0, len(todo))
     if not todo:
         stats.seconds = time.perf_counter() - start
         return stats
 
     def work(row: sqlite3.Row) -> previews.PreviewResult:
+        if row["id"] in relook:
+            began = time.perf_counter()
+            look = previews.cached_look(cfg, row["quick_hash"])
+            if look is not None:
+                return previews.PreviewResult(row["id"], row["width"], row["height"], look, time.perf_counter() - began)
         return previews.make_previews(
             row["id"],
             path / row["name"],

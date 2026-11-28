@@ -22,7 +22,7 @@ from ..config import Config
 from . import KINDS
 from . import model as model_mod
 
-REASONS = ("blur", "eyes", "expression", "duplicate", "composition")
+REASONS = ("blur", "eyes", "expression", "duplicate", "composition", "exposure")
 IDLE_CAP = 120.0  # seconds: longer pauses between actions do not count as time spent culling
 
 

@@ -40,6 +40,28 @@ def test_rules_in_order():
     assert (best.decision, best.kind) == ("keep", "expression")
 
 
+def test_dark_frames():
+    single = {"size": 1, "rank": 1, "gap": 0.0}
+    failed_flash = {**LOOK, "lum_p50": 0.024, "lum_p99": 0.24}  # a flash frame that came out about 4 EV under
+    very = rules.suggest({}, SHARP, single, failed_flash, [], {})
+    assert (very.decision, very.kind, very.reason) == ("reject", "technical", "very dark: about 4 EV under")
+    assert piles.pile_for(very.decision, very.kind, very.reject_probability, {"technical": "automatic"}) == (
+        "auto_reject"
+    )
+    assert rules.suggest({}, SOFT, single, failed_flash, [], {}).reason.startswith("very dark")  # before focus
+    dim_look = {**LOOK, "lum_p50": 0.068, "lum_p99": 0.315}
+    dim = rules.suggest({}, SHARP, single, dim_look, [], {})
+    assert (dim.decision, dim.kind, dim.reason) == ("reject", "technical", "dark: about 3 EV under")
+    assert piles.pile_for(dim.decision, dim.kind, dim.reject_probability, {"technical": "automatic"}) == "your_call"
+    assert rules.suggest({}, SOFT, single, dim_look, [], {}).reason == "the face is soft"  # focus comes first
+    lamp = rules.suggest({}, SHARP, single, {**LOOK, "lum_p50": 0.05, "lum_p99": 0.9}, [], {})
+    assert lamp.decision == "keep"  # a dark room with a bright lamp in it is not a failed exposure
+    burst = {"size": 3, "rank": 2, "gap": 0.2, "position": 1, "reason": "#2 is better: very dark"}
+    assert rules.suggest({}, SHARP, burst, failed_flash, [], {}).kind == "technical"  # not expression
+    assert rules.suggest({}, SHARP, single, LOOK, [], {}).decision == "keep"  # look@1 measures: as before
+    assert {"lum_p01", "lum_p50", "lum_p99"} <= set(very.features) <= set(model_mod.FEATURES)
+
+
 def test_piles_follow_the_trust_dial():
     modes = {"technical": "automatic", "duplicates": "automatic", "eyes": "suggest"}
     assert piles.pile_for("reject", "technical", 0.925, modes) == "auto_reject"
@@ -117,6 +139,8 @@ def test_decisions_are_logged_with_the_app_suggestion(folder):
     assert tuple(row) == ("keep", "auto_reject", "reject", "technical", "blur")
     with pytest.raises(actions.CullError):
         actions.set_decision(conn, 1, "keep", reason="because")
+    actions.set_reason(conn, 1, "exposure")  # too dark or too bright (ADR 0018)
+    assert conn.execute("SELECT reason FROM decisions WHERE image_id = 1").fetchone()[0] == "exposure"
 
 
 def decisions_of(conn):

@@ -53,9 +53,9 @@
       <h3>What the app decides on its own</h3>
       <dl>
         <dt>Rejected by the app</dt>
-        <dd>Clear technical failures, and near-copies of a better frame in the same burst. At Done culling they go to the drive's trash unless you <b>keep</b> them.</dd>
+        <dd>Clear technical failures (a missed focus, a blurred subject, a very dark frame), and near-copies of a better frame in the same burst. At Done culling they go to the drive's trash unless you <b>keep</b> them.</dd>
         <dt>Kept by the app</dt>
-        <dd>Sharp photos that aren't part of a burst. They are kept unless you reject them.</dd>
+        <dd>Sharp photos that aren't part of a burst and aren't dark. They are kept unless you reject them.</dd>
       </dl>
       <p>The app does this only for the kinds of decision switched to automatic, and only when it is sure. Its marks are outlined. Everything else is open until you decide, and open photos are kept.</p>
 
@@ -121,7 +121,7 @@
       <p class="muted">A tile is a single photo, or a whole burst. The loupe and burst compare are one walk in shooting order: a single photo shows in the loupe and a burst in compare, and a move onto another tile switches between them by itself. <kbd>→</kbd> enters a burst at its first frame and <kbd>←</kbd> at its last. A burst's frames shown in the loupe with <kbd>C</kbd>, <kbd>M</kbd> or <kbd>Z</kbd> go on one by one there until the walk reaches another burst.</p>
       <p class="muted">After <kbd>G</kbd> or <kbd>F</kbd> the grid moves to the next tile and the loupe on as <kbd>→</kbd> does, to the next frame of a burst or the next tile, once you answer or skip the question when there is one. Burst compare stays on the frame.</p>
       <p class="muted">Mouse: a click selects a photo or a burst, and a double-click opens it: a photo in the loupe, a burst in burst compare. In compare, a double-click picks a frame. The mouse's back button (or the browser's Back, or <kbd>Alt</kbd>+<kbd>←</kbd>) does what <kbd>Esc</kbd> does, one step at a time, and from the grid showing every photo it goes back to the folders.</p>
-      <p class="muted">When you overrule the app on one photo, the bar at the bottom asks why: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition, or Skip. It is optional. The photo stays on screen until you answer, and then the view moves on; any other key skips the question and does its own job.</p>
+      <p class="muted">When you overrule the app on one photo, the bar at the bottom asks why: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition · <kbd>6</kbd> exposure (too dark or too bright), or Skip. It is optional. The photo stays on screen until you answer, and then the view moves on; any other key skips the question and does its own job.</p>
       <p class="muted">Rejects are only flags until you press Done culling; then they go to the drive's trash, which only you empty.</p>
     {/if}
   </div>

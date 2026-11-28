@@ -366,7 +366,7 @@ Culling and deleting take you the most time today, so this is the part the app a
 
 | Pile | What goes in | What you do |
 |---|---|---|
-| **Auto-reject** | Photos it's very sure you'd reject: a missed focus, a blank frame, a duplicate clearly worse than its sibling, closed eyes when a sibling has them open | Skim one grid and rescue mistakes |
+| **Auto-reject** | Photos it's very sure you'd reject: a missed focus, a blank or very dark frame, a duplicate clearly worse than its sibling, closed eyes when a sibling has them open | Skim one grid and rescue mistakes |
 | **Auto-keep** | Clearly good photos that aren't duplicates | Nothing, unless you want to look |
 | **Your call** | Everything it isn't sure about, especially close calls on expression and moment | Decide these; this is where your time goes |
 
@@ -465,7 +465,7 @@ Most of your feedback comes from simply culling and reviewing as usual: the app 
   - which frame you picked in a burst;
   - each time you moved a photo out of the pile the app chose;
   - every edit you changed, recorded as the image features, the app's or Claude's value, and your value.
-- **Optional quick reasons:** when you overrule the app, a small picker offers blur, eyes, expression, duplicate or composition. Press one key, or ignore it.
+- **Optional quick reasons:** when you overrule the app, a small picker offers blur, eyes, expression, duplicate, composition or exposure. Press one key, or ignore it.
 - **Notes in your own words:** type them in a "tell the app" box, or just tell Claude in Claude Code, e.g. "I prefer candid laughs over posed smiles". They go into your taste notes.
 - **Not your photo history** (your choice):
   - The culling model starts from your first folders in the app, and each one gives it hundreds of decisions.
@@ -558,7 +558,7 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 | ← → | previous / next photo or burst; in the loupe and compare one walk, where a burst opens in compare and goes frame by frame | `\` | before / after |
 | ↑ ↓ | row above / below (in the loupe and compare: photo or burst) | `[` `]` | exposure −/+ 0.15 EV |
 | G F U | keep / reject / unflag; on a burst tile, G picks the frame shown and F and U act on every frame | `,` `.` | cooler / warmer |
-| 1–5 | quick reason, when the picker shows | `{` `}` | rotate −/+ 0.1° |
+| 1–6 | quick reason, when the picker shows | `{` `}` | rotate −/+ 0.1° |
 | Z | 100% on eyes / AF point | R | reset parameter to as-shot |
 | M | focus heatmap | L | lock parameter |
 | C | burst compare | E | open in RawTherapee |
