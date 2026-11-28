@@ -555,8 +555,8 @@ Claude runs through **Claude Code on your existing account**, with no API key an
 
 | Key | Action | Key | Action |
 |---|---|---|---|
-| ← → | previous / next photo or burst (in compare: frame) | `\` | before / after |
-| ↑ ↓ | row above / below (in compare: burst) | `[` `]` | exposure −/+ 0.15 EV |
+| ← → | previous / next photo or burst; in the loupe and compare one walk, where a burst opens in compare and goes frame by frame | `\` | before / after |
+| ↑ ↓ | row above / below (in the loupe and compare: photo or burst) | `[` `]` | exposure −/+ 0.15 EV |
 | G F U | keep / reject / unflag; on a burst tile, G picks the frame shown and F and U act on every frame | `,` `.` | cooler / warmer |
 | 1–5 | quick reason, when the picker shows | `{` `}` | rotate −/+ 0.1° |
 | Z | 100% on eyes / AF point | R | reset parameter to as-shot |

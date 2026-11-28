@@ -7,15 +7,15 @@
 
   // Key, then what it does in the grid, the loupe and burst compare (ADR 0011).
   const keys: [string, string, string, string][] = [
-    ["← →", "previous / next tile", "previous / next photo, every frame", "previous / next frame"],
-    ["↑ ↓", "the tile in the row above / below", "previous / next tile", "previous / next burst"],
-    ["PgUp PgDn", "previous / next scene", "previous / next scene", ""],
-    ["N  Shift+N", "next / previous tile to decide", "next / previous tile to decide", "next / previous burst to decide"],
+    ["← →", "previous / next tile", "previous / next photo; a burst opens in compare", "previous / next frame, then the previous / next tile"],
+    ["↑ ↓", "the tile in the row above / below", "previous / next tile", "previous / next tile"],
+    ["PgUp PgDn", "previous / next scene", "previous / next scene", "previous / next scene"],
+    ["N  Shift+N", "next / previous tile to decide", "next / previous tile to decide", "next / previous tile to decide"],
     ["Enter", "a photo: loupe; a burst: compare", "back to the grid", "back to the grid"],
-    ["C", "a burst: compare", "a burst's frame: compare", "back to where you came from"],
-    ["Esc", "show every photo (turns the filter off)", "back to the grid", "back to where you came from"],
+    ["C", "a burst: compare", "a burst's frame: compare", "this frame in the loupe"],
+    ["Esc", "show every photo (turns the filter off)", "back to the grid", "back to the grid"],
     ["Mouse back", "like Esc; with every photo shown, back to the folders", "like Esc", "like Esc"],
-    ["Tab  Shift+Tab", "next / previous filter", "next / previous filter", "next / previous filter, in the loupe"],
+    ["Tab  Shift+Tab", "next / previous filter", "next / previous filter", "next / previous filter"],
     ["G", "a photo: keep; a burst: pick the frame shown", "a photo: keep; a burst's frame: pick it", "pick this frame"],
     ["F", "a photo: reject; a burst: reject every frame", "reject", "reject this frame"],
     ["U", "a photo: clear; a burst: clear every frame", "clear your decision", "clear this frame"],
@@ -86,9 +86,12 @@
       <h3>Bursts</h3>
       <p>A burst's tile shows its kept frame (the app's best of them when several are kept), else the app's best frame, and while you look through it, the frame you selected. Its mark is ✓ once a frame is kept and none is open, ✗ when every frame is rejected, and open otherwise, for example with one frame rejected and two open. In the grid, <kbd>G</kbd> picks the frame shown, <kbd>F</kbd> rejects every frame and <kbd>U</kbd> clears every frame. A click selects the burst, as it does a single photo; a double-click, <kbd>Enter</kbd> or <kbd>C</kbd> opens burst compare.</p>
 
+      <h3>The loupe and burst compare: one walk</h3>
+      <p>Opened from the grid, the loupe and burst compare walk through the folder in shooting order: a single photo shows in the loupe and a burst in burst compare, which opens by itself when the walk reaches the burst. <kbd>←</kbd> <kbd>→</kbd> go photo by photo, and through a burst frame by frame, entering it at its first frame going forward and at its last going back. <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>N</kbd> and <kbd>PgUp</kbd> <kbd>PgDn</kbd> go to the previous or next photo or burst, the next one still to decide and the next scene, the same in both. In compare, <kbd>C</kbd> shows the selected frame in the loupe, as <kbd>M</kbd> and <kbd>Z</kbd> do; there <kbd>←</kbd> <kbd>→</kbd> go on frame by frame until the walk reaches another burst. <kbd>Esc</kbd> goes back to the grid.</p>
+
       <h3>Burst compare <kbd>C</kbd></h3>
       <p>Every frame of the burst side by side, each with its mark and its problems ("eyes closed, 85% as sharp as the sharpest frame"). Below them, one strip per person seen in at least two frames, followed by where they are in the frame, never by who they are: eyes open or closed, the smile, and the blur at the eyes (lower is sharper). Faces seen in only one frame, or small in the background, fold away under Other faces.</p>
-      <p><kbd>G</kbd> picks a frame: it is kept, and the burst's open frames become your rejects. Frames you kept stay kept, so <kbd>G</kbd> on another frame keeps it too; to move the keep instead, press <kbd>F</kbd> on the frame you kept before. Frames the app already rejects on its own keep the app's mark; Done culling rejects them anyway. Compare stays on the burst so you see the result; <kbd>↓</kbd> or <kbd>N</kbd> moves on.</p>
+      <p><kbd>G</kbd> picks a frame: it is kept, and the burst's open frames become your rejects. Frames you kept stay kept, so <kbd>G</kbd> on another frame keeps it too; to move the keep instead, press <kbd>F</kbd> on the frame you kept before. Frames the app already rejects on its own keep the app's mark; Done culling rejects them anyway. Compare stays on the frame so you see the result: <kbd>→</kbd> goes on through the frames and past the last one, and <kbd>↓</kbd> skips to the next photo or burst.</p>
 
       <h3>The bottom bar</h3>
       <p>The file (<span class="muted">+ JPG</span> when the camera's JPEG is paired with it), its mark in words ("kept by you", "rejected by the app", "to decide"), then the app's suggestion, such as <b class="reject">reject</b> <span class="muted">(technical, 92% reject)</span>, and its reason. The kind says why: <b>technical</b> (focus or exposure), <b>duplicates</b> (almost the same as a better frame), <b>eyes</b>, <b>expression</b> (not the burst's best moment, or "best of 7") or <b>composition</b> (a face cut by the edge). The percentage is how likely you are to reject it. On the right: the frame's place in its burst and the app's rank for it ("burst #3/7, rank 2"), the exposure, and <span class="badge">RT edits</span> when RawTherapee already has edits for the photo; they are kept. For a frame of a burst, a second line gives every frame's mark: "#2 kept by you; #1 rejected by the app; #3, #4 rejected by you".</p>
@@ -115,7 +118,8 @@
           {/each}
         </tbody>
       </table>
-      <p class="muted">A tile is a single photo, or a whole burst. After <kbd>G</kbd> or <kbd>F</kbd> the grid moves to the next tile and the loupe to the next photo, once you answer or skip the question when there is one; after a pick, the loupe moves to the next tile. Burst compare stays where it is.</p>
+      <p class="muted">A tile is a single photo, or a whole burst. The loupe and burst compare are one walk in shooting order: a single photo shows in the loupe and a burst in compare, and a move onto another tile switches between them by itself. <kbd>→</kbd> enters a burst at its first frame and <kbd>←</kbd> at its last. A burst's frames shown in the loupe with <kbd>C</kbd>, <kbd>M</kbd> or <kbd>Z</kbd> go on one by one there until the walk reaches another burst.</p>
+      <p class="muted">After <kbd>G</kbd> or <kbd>F</kbd> the grid moves to the next tile and the loupe on as <kbd>→</kbd> does, to the next frame of a burst or the next tile, once you answer or skip the question when there is one. Burst compare stays on the frame.</p>
       <p class="muted">Mouse: a click selects a photo or a burst, and a double-click opens it: a photo in the loupe, a burst in burst compare. In compare, a double-click picks a frame. The mouse's back button (or the browser's Back, or <kbd>Alt</kbd>+<kbd>←</kbd>) does what <kbd>Esc</kbd> does, one step at a time, and from the grid showing every photo it goes back to the folders.</p>
       <p class="muted">When you overrule the app on one photo, the bar at the bottom asks why: <kbd>1</kbd> blur · <kbd>2</kbd> eyes · <kbd>3</kbd> expression · <kbd>4</kbd> duplicate · <kbd>5</kbd> composition, or Skip. It is optional. The photo stays on screen until you answer, and then the view moves on; any other key skips the question and does its own job.</p>
       <p class="muted">Rejects are only flags until you press Done culling; then they go to the drive's trash, which only you empty.</p>

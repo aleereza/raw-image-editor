@@ -67,8 +67,8 @@
       <button onclick={run(act.down)} disabled={!photo} title="Down (↓)">↓ Down</button>
     </div>
     <button onclick={run(act.nextOpen)}><span>Next to decide</span><kbd>N</kbd></button>
-    <button onclick={run(act.previousScene)} disabled={compare || !photo}><span>Previous scene</span><kbd>PgUp</kbd></button>
-    <button onclick={run(act.nextScene)} disabled={compare || !photo}><span>Next scene</span><kbd>PgDn</kbd></button>
+    <button onclick={run(act.previousScene)} disabled={!photo}><span>Previous scene</span><kbd>PgUp</kbd></button>
+    <button onclick={run(act.nextScene)} disabled={!photo}><span>Next scene</span><kbd>PgDn</kbd></button>
     <button onclick={run(act.nextFilter)}><span>Next filter</span><kbd>Tab</kbd></button>
     <button onclick={run(act.clearFilter)} disabled={ui.filter === null}><span>Show every photo</span></button>
   </section>
