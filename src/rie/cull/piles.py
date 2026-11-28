@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 
 from .. import catalog
+from ..analysis import focus, sharpness
 from . import KINDS, rules
 from . import model as model_mod
 
@@ -62,7 +63,7 @@ def folder_inputs(conn: sqlite3.Connection, folder_id: int) -> list[dict]:
     analyses: dict[tuple[int, str], dict] = {}
     for r in conn.execute(
         f"SELECT image_id, kind, result FROM analyses "
-        f"WHERE image_id IN ({marks}) AND kind IN ('focus', 'burst', 'look')",
+        f"WHERE image_id IN ({marks}) AND kind IN ('focus', 'burst', 'look', 'sharpness')",
         ids,
     ):
         analyses[(r["image_id"], r["kind"])] = catalog.loads(r["result"], {})
@@ -79,11 +80,18 @@ def folder_inputs(conn: sqlite3.Connection, folder_id: int) -> list[dict]:
     out = []
     for r in images:
         i = r["id"]
+        focus_result = analyses.get((i, "focus"), {})
+        stored = analyses.get((i, "sharpness"), {})
+        if focus_result.get("af_box") and stored.get("blur"):
+            # The AF point on its own (ADR 0019), from the blur map the analysis stored: no photo is read again.
+            blur = sharpness.decode_map(stored["blur"], stored["rows"], stored["cols"])
+            boxes = [f["box"] for f in faces[i]]
+            focus_result = {**focus_result, **focus.af_measures(blur, focus_result["af_box"], boxes)}
         out.append(
             {
                 "image_id": i,
                 "meta": catalog.loads(r["meta"], {}),
-                "focus": analyses.get((i, "focus"), {}),
+                "focus": focus_result,
                 "burst": analyses.get((i, "burst"), {}),
                 "look": analyses.get((i, "look"), {}),
                 "faces": faces[i],

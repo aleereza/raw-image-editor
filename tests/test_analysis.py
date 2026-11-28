@@ -137,6 +137,47 @@ def test_manual_focus_uses_the_sharpest_detail():
     assert (result.subject, result.verdict) == ("frame", "sharp")
 
 
+# A small face far behind an object the camera focused on (ADR 0019), and a face just above the AF point.
+FAR_FACE = {"box": [0.1, 0.1, 0.05, 0.075], "eyes": [[0.115, 0.13], [0.135, 0.13]]}
+NEAR_FACE = {"box": [0.44, 0.25, 0.12, 0.16], "eyes": [[0.47, 0.31], [0.53, 0.31]]}
+AF_S = {"af_primary": "C6", "focus_mode": "AF-S"}
+
+
+def object_in_focus(face: dict, af_sharp: bool = True) -> tuple[np.ndarray, dict]:
+    """A frame with an object under the AF point (the centre), a sharp floor in front and a soft face: the stored
+    focus result with the AF point's own measures added, as the sort sees it."""
+    blur = np.full((30, 40), 2.0)
+    blur[9:22, 12:29] = 0.3 if af_sharp else 1.6  # the object under the AF point
+    blur[22:30, :] = 0.3  # the floor in front
+    x, y, w, h = face["box"]
+    blur[int(y * 30) : int(np.ceil((y + h) * 30)), int(x * 40) : int(np.ceil((x + w) * 40))] = 2.2
+    result = focus.inspect(smap_from(blur), [face], AF_S, 1).to_json()
+    return blur, {**result, **focus.af_measures(blur, result["af_box"], [face["box"]])}
+
+
+def test_a_soft_face_far_from_a_sharp_af_point_is_no_clear_miss():
+    _, result = object_in_focus(FAR_FACE)
+    assert (result["verdict"], result["subject"], result["subject_blur"]) == ("missed", "eyes", 2.2)
+    assert result["af_blur"] == pytest.approx(0.3) and result["af_gap"] > focus.AWAY
+    assert focus.unclear_miss(result) == "the AF point is sharp, but the eyes away from it are soft"
+    face = focus.unclear_miss({**result, "subject": "face"})
+    assert face == "the AF point is sharp, but the face away from it is soft"
+
+
+def test_a_missed_focus_stays_clear_near_the_face_or_with_a_soft_af_point():
+    _, beside = object_in_focus(NEAR_FACE)  # the AF point just under the face: the camera aimed at the person
+    assert beside["verdict"] == "missed" and beside["af_gap"] < focus.AWAY
+    assert focus.unclear_miss(beside) is None
+    _, soft_af = object_in_focus(FAR_FACE, af_sharp=False)  # the camera's own point is soft too
+    assert soft_af["verdict"] == "missed" and soft_af["af_blur"] > focus.SHARP
+    assert focus.unclear_miss(soft_af) is None
+    blur, _ = object_in_focus(FAR_FACE)
+    assert focus.af_measures(blur, None, [FAR_FACE["box"]]) == {"af_blur": None, "af_gap": None}  # manual focus
+    assert focus.af_measures(blur, focus.af_box("C6", 1), [])["af_gap"] is None  # no faces
+    sharp = focus.inspect(smap_from(np.full((30, 40), 0.3)), [FAR_FACE], AF_S, 1).to_json()
+    assert focus.unclear_miss({**sharp, "af_blur": 0.3, "af_gap": 9.0}) is None  # only a missed focus is unclear
+
+
 # --- grouping and bursts -----------------------------------------------------------------------------------------
 
 

@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from rie import catalog, config
+from rie.analysis import focus, sharpness
 from rie.cull import actions, piles, rules
 from rie.cull import model as model_mod
 from tests import guard
@@ -11,6 +13,13 @@ from tests import guard
 SHARP = {"verdict": "sharp", "subject_blur": 0.3, "background_blur": 0.8, "reason": "the eyes are sharp"}
 SOFT = {"verdict": "soft", "subject_blur": 2.4, "background_blur": 2.0, "reason": "the face is soft"}
 LOOK = {"luma": 0.4, "clip_high": 0.0, "clip_low": 0.0}
+MISSED = {
+    "verdict": "missed",
+    "subject": "eyes",
+    "subject_blur": 2.2,
+    "background_blur": 0.4,
+    "reason": "focus missed: the background is sharper than the eyes",
+}
 
 
 def test_rules_in_order():
@@ -60,6 +69,27 @@ def test_dark_frames():
     assert rules.suggest({}, SHARP, burst, failed_flash, [], {}).kind == "technical"  # not expression
     assert rules.suggest({}, SHARP, single, LOOK, [], {}).decision == "keep"  # look@1 measures: as before
     assert {"lum_p01", "lum_p50", "lum_p99"} <= set(very.features) <= set(model_mod.FEATURES)
+
+
+def test_a_missed_focus_far_from_a_sharp_af_point_is_the_owners_call():
+    single = {"size": 1, "rank": 1, "gap": 0.0}
+    modes = {"technical": "automatic"}
+    clear = rules.suggest({}, MISSED, single, LOOK, [], {})  # analysed before the sort measured the AF point
+    assert (clear.decision, clear.reason) == ("reject", MISSED["reason"])
+    assert piles.pile_for(clear.decision, clear.kind, clear.reject_probability, modes) == "auto_reject"
+    far = rules.suggest({}, {**MISSED, "af_blur": 0.3, "af_gap": 7.5}, single, LOOK, [], {})
+    assert (far.decision, far.kind, far.reason) == (
+        "reject",
+        "technical",
+        "the AF point is sharp, but the eyes away from it are soft",
+    )
+    assert piles.pile_for(far.decision, far.kind, far.reject_probability, modes) == "your_call"
+    assert (far.features["af_blur"], far.features["af_gap"]) == (0.3, 7.5)
+    assert {"af_blur", "af_gap"} <= set(far.features) <= set(model_mod.FEATURES)
+    beside = rules.suggest({}, {**MISSED, "af_blur": 0.3, "af_gap": 0.9}, single, LOOK, [], {})
+    assert beside.reason == MISSED["reason"]  # the AF point beside the face: the camera aimed at the person
+    soft_af = rules.suggest({}, {**MISSED, "af_blur": 1.6, "af_gap": 7.5}, single, LOOK, [], {})
+    assert soft_af.reason == MISSED["reason"]  # the camera's own point is soft too
 
 
 def test_piles_follow_the_trust_dial():
@@ -121,6 +151,45 @@ def folder(tmp_path, monkeypatch):
 
 def pile_of(conn, image_id):
     return conn.execute("SELECT pile, decision, kind FROM suggestions WHERE image_id = ?", (image_id,)).fetchone()
+
+
+def test_sorting_measures_the_af_point_on_the_stored_blur_map(tmp_path):
+    """The sort measures the AF point from the blur map the analysis stored, so no photo is read again (ADR 0019)."""
+    conn = catalog.connect(tmp_path / "catalog.db")
+    conn.execute("INSERT INTO folders (id, path, name, opened_at) VALUES (1, '/shoot', 'shoot', 'now')")
+    blur = np.full((30, 40), 2.0)
+    blur[9:30, 12:29] = 0.3  # an object under the centre AF point, and the floor in front of it
+    stored = {"version": "sharpness@1", "rows": 30, "cols": 40, "blur": sharpness.encode_map(blur), "noise": 1e-5}
+    af = focus.af_box("C6", 1)
+    far, beside = [0.1, 0.1, 0.05, 0.075], [0.44, 0.25, 0.12, 0.16]  # a small face far behind; one above the point
+    for i, box in ((1, far), (2, beside), (3, far)):
+        conn.execute(
+            "INSERT INTO images (id, folder_id, name, kind, size, mtime_ns, quick_hash, capture_time, scanned_at) "
+            "VALUES (?, 1, ?, 'raw', 1, 0, ?, ?, 'now')",
+            (i, f"DSC_000{i}.NEF", f"q:{i}", f"2026-05-01T10:00:0{i}"),
+        )
+        conn.execute(
+            "INSERT INTO faces (image_id, idx, box, score, source) VALUES (?, 0, ?, 0.9, 'whole')", (i, json.dumps(box))
+        )
+        results = {
+            "focus": {**MISSED, "af_box": af, "subject_boxes": [box]},
+            "burst": {"size": 1, "rank": 1, "gap": 0.0},
+            "look": LOOK,
+            **({"sharpness": stored} if i < 3 else {}),  # the third was analysed without a stored map
+        }
+        for kind, result in results.items():
+            conn.execute(
+                "INSERT INTO analyses (image_id, kind, version, input_hash, result, created_at) "
+                "VALUES (?, ?, 'v', ?, ?, 'now')",
+                (i, kind, f"q:{i}", json.dumps(result)),
+            )
+    piles.sort_folder(conn, 1)
+    assert tuple(pile_of(conn, 1)) == ("your_call", "reject", "technical")
+    assert tuple(pile_of(conn, 2)) == ("auto_reject", "reject", "technical")
+    assert tuple(pile_of(conn, 3)) == ("auto_reject", "reject", "technical")
+    reason, features = conn.execute("SELECT reason, features FROM suggestions WHERE image_id = 1").fetchone()
+    assert reason == "the AF point is sharp, but the eyes away from it are soft"
+    assert json.loads(features)["af_blur"] == pytest.approx(0.3)
 
 
 def test_sort_folder_puts_photos_in_piles(folder):
